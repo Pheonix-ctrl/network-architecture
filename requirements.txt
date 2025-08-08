@@ -1,4 +1,4 @@
-# requirements.txt
+# requirements.txt - UPDATED WITHOUT BLUETOOTH
 # Core Framework
 fastapi==0.104.1
 uvicorn[standard]==0.24.0
@@ -9,9 +9,11 @@ pydantic-settings==2.1.0
 sqlalchemy[asyncio]==2.0.23
 asyncpg==0.29.0
 alembic==1.13.0
+psycopg2-binary==2.9.9
 
 # Redis
 aioredis==2.0.1
+redis==5.0.1
 
 # AI Services
 openai==1.3.0
@@ -22,23 +24,28 @@ httpx==0.25.0
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
 python-multipart==0.0.6
+cryptography==41.0.8
 
 # WebSocket & Real-time
 websockets==12.0
+python-socketio==5.10.0
 
-# MJ Network & P2P
-aiofiles==23.2.1
-PyBluez==0.23  # For Bluetooth discovery
+# Email validation
+email-validator==2.1.0
+
+# Network Only (NO BLUETOOTH)
+requests==2.31.0
+aiohttp==3.9.1
+netifaces==0.11.0  # For network interface detection
 
 # Utilities
 python-dotenv==1.0.0
 structlog==23.2.0
 tenacity==8.2.3
+numpy==1.24.3
 
-# Development
+# Development & Testing
 pytest==7.4.3
 pytest-asyncio==0.21.1
 black==23.11.0
 isort==5.12.0
-mypy==1.7.0
-
