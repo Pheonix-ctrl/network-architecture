@@ -1,6 +1,6 @@
 
 # src/services/websocket/handlers.py
-from typing import Dict, Any, Optional
+from typing import List, Any, Dict, Optional
 import json
 from ...services.ai.openai_client import OpenAIClient
 from ...services.ai.mode_classifier import ModeClassifier

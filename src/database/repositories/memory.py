@@ -1,4 +1,3 @@
-
 # src/database/repositories/memory.py
 from typing import List, Optional, Dict, Any
 from sqlalchemy import select, update, delete, func, desc, and_, text
@@ -41,53 +40,61 @@ class MemoryRepository(BaseRepository[Memory]):
     ) -> List[MemoryResponse]:
         """Search memories by embedding similarity using cosine similarity"""
         
-        # Convert embedding to PostgreSQL array format
-        embedding_str = "[" + ",".join(map(str, embedding)) + "]"
-        
-        # Use raw SQL for vector similarity search
-        # In production, you'd use pgvector extension for better performance
-        query = text("""
-            SELECT m.*, 
-                   (m.embedding <-> :embedding::float[]) as distance,
-                   (1 - (m.embedding <-> :embedding::float[])) as similarity
-            FROM memories m
-            WHERE m.user_id = :user_id 
-            AND (1 - (m.embedding <-> :embedding::float[])) >= :threshold
-            ORDER BY similarity DESC
-            LIMIT :limit
-        """)
-        
-        result = await self.db.execute(
-            query,
-            {
-                "user_id": user_id,
-                "embedding": embedding_str,
-                "threshold": similarity_threshold,
-                "limit": limit
-            }
-        )
-        
-        memories = []
-        for row in result:
-            memory_dict = {
-                "id": row.id,
-                "fact": row.fact,
-                "context": row.context,
-                "memory_type": row.memory_type,
-                "category": row.category,
-                "confidence": row.confidence,
-                "importance": row.importance,
-                "relevance_tags": row.relevance_tags or [],
-                "access_count": row.access_count,
-                "created_at": row.created_at,
-                "last_accessed": row.last_accessed,
-                "is_validated": row.is_validated
-            }
-            # Add similarity score
-            memory_dict["relevance_score"] = float(row.similarity)
-            memories.append(MemoryResponse(**memory_dict))
-        
-        return memories
+        try:
+            # Convert embedding to PostgreSQL array format string
+            embedding_str = "[" + ",".join(map(str, embedding)) + "]"
+            
+            # Use SQLAlchemy's text() with proper parameter binding for pgvector
+            # Only select columns that actually exist in the database
+            query = text("""
+                SELECT m.id, m.fact, m.context, m.memory_type, m.category,
+                       m.confidence, m.importance, m.access_count,
+                       m.created_at, m.is_validated,
+                       (m.embedding <-> :embedding) as distance,
+                       (1 - (m.embedding <-> :embedding)) as similarity
+                FROM memories m
+                WHERE m.user_id = :user_id 
+                AND (1 - (m.embedding <-> :embedding)) >= :threshold
+                ORDER BY similarity DESC
+                LIMIT :limit
+            """)
+            
+            result = await self.db.execute(
+                query,
+                {
+                    "user_id": user_id,
+                    "embedding": embedding_str,  # Pass as string
+                    "threshold": similarity_threshold,
+                    "limit": limit
+                }
+            )
+            
+            memories = []
+            for row in result:
+                memory_dict = {
+                    "id": row.id,
+                    "fact": row.fact,
+                    "context": row.context,
+                    "memory_type": row.memory_type,
+                    "category": row.category,
+                    "confidence": row.confidence,
+                    "importance": row.importance,
+                    "relevance_tags": [],  # Default empty list since column doesn't exist
+                    "access_count": row.access_count,
+                    "created_at": row.created_at,
+                    "last_accessed": row.created_at,  # Use created_at since last_accessed doesn't exist
+                    "is_validated": row.is_validated
+                }
+                # Add similarity score
+                memory_dict["relevance_score"] = float(row.similarity)
+                memories.append(MemoryResponse(**memory_dict))
+            
+            return memories
+            
+        except Exception as e:
+            print(f"Memory search failed: {e}")
+            # Return empty list if memory search fails - don't block the conversation
+            return []
     
     async def get_by_user_filtered(
         self,

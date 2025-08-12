@@ -1,5 +1,6 @@
 # src/config/settings.py
-from pydantic import BaseSettings, Field
+from pydantic_settings import BaseSettings
+from pydantic import Field
 from typing import Optional, List
 import os
 
@@ -23,10 +24,8 @@ class Settings(BaseSettings):
     # AI Services Configuration
     OPENAI_API_KEY: str = Field(..., env="OPENAI_API_KEY")
     OPENAI_MODEL: str = Field(default="gpt-4o-mini", env="OPENAI_MODEL")
-    
     GEMINI_API_KEY: str = Field(..., env="GEMINI_API_KEY")
     GEMINI_MODEL: str = Field(default="gemini-1.5-flash", env="GEMINI_MODEL")
-    
     PERPLEXITY_API_KEY: str = Field(..., env="PERPLEXITY_API_KEY")
     PERPLEXITY_MODEL: str = Field(default="llama-3.1-sonar-small-128k-online", env="PERPLEXITY_MODEL")
     
@@ -55,7 +54,7 @@ class Settings(BaseSettings):
     # Mode System Configuration
     DEFAULT_MODE: str = Field(default="mj", env="DEFAULT_MODE")
     MODE_SWITCH_COOLDOWN: int = Field(default=300, env="MODE_SWITCH_COOLDOWN")  # 5 minutes
-    KALKI_MODE_TIMEOUT: int = Field(default=1800, env="KALKI_MODE_TIMEOUT")    # 30 minutes
+    KALKI_MODE_TIMEOUT: int = Field(default=1800, env="KALKI_MODE_TIMEOUT")  # 30 minutes
     
     # Rate Limiting
     RATE_LIMIT_REQUESTS: int = Field(default=100, env="RATE_LIMIT_REQUESTS")
@@ -77,6 +76,7 @@ class Settings(BaseSettings):
         env_file = ".env"
         env_file_encoding = "utf-8"
         case_sensitive = True
+        extra = "allow"  # ← THIS IS THE KEY FIX! Allows extra env variables
     
     @property
     def is_development(self) -> bool:
@@ -85,4 +85,3 @@ class Settings(BaseSettings):
     @property
     def is_production(self) -> bool:
         return self.ENVIRONMENT.lower() == "production"
-

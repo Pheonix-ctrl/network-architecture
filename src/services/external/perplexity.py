@@ -1,122 +1,84 @@
+# perplexity.py - FIXED: Pure MJ Web Search
+import requests
+from ..ai.personality.prompts import PersonalityPrompts
 
-# src/services/external/perplexity.py
-import aiohttp
-import json
-from typing import Dict, Any, Optional
-from ...config.settings import Settings
+PERPLEXITY_API_KEY = "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"
+PERPLEXITY_URL = "https://api.perplexity.ai/chat/completions"
 
-settings = Settings()
-
-class PerplexityClient:
-    """Client for Perplexity AI real-time search"""
+async def handle_web_question(user_message: str, context: str, openai_client) -> str:
+    """Pure MJ web search responses"""
+    print(f"🌐 PERPLEXITY handling: {user_message}")
     
-    def __init__(self):
-        self.api_key = settings.PERPLEXITY_API_KEY
-        self.base_url = "https://api.perplexity.ai/chat/completions"
-        self.model = settings.PERPLEXITY_MODEL
-        self.timeout = 30
+    # Get web data first
+    web_data = search_web(user_message)
+    print(f"🌐 Web data: {web_data[:100]}...")
     
-    async def search(self, query: str, max_tokens: int = 400) -> str:
-        """Search for real-time information using Perplexity"""
-        
-        if not self.api_key:
-            return "Real-time search is not available (API key not configured)."
-        
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json"
-        }
-        
-        payload = {
-            "model": self.model,
-            "messages": [
-                {
-                    "role": "system",
-                    "content": "You are a helpful assistant that provides accurate, up-to-date information. Keep responses concise and cite sources when possible."
-                },
-                {
-                    "role": "user",
-                    "content": query
-                }
+    if web_data.startswith("Search") and "error" in web_data.lower():
+        return "*(frustrated)* Ugh, I can't get online right now... the search thing is being weird. Try again in a moment?"
+    
+    # MINIMAL prompt - let MJ react naturally
+    mj_web_prompt = f"""{PersonalityPrompts.BASE_INSTRUCTIONS}
+
+CONVERSATION CONTEXT: {context}
+
+You searched for: "{user_message}"
+
+Here's what you found: {web_data}
+
+React to this information as MJ - emotionally, naturally. Share what you found but with your genuine reactions."""
+
+    try:
+        response = await openai_client.chat_completion(
+            messages=[
+                {"role": "system", "content": mj_web_prompt},
+                {"role": "user", "content": user_message}
             ],
-            "max_tokens": max_tokens,
-            "temperature": 0.1,
-            "top_p": 0.9,
-            "return_citations": True,
-            "search_domain_filter": ["perplexity.ai"],
-            "return_images": False,
-            "return_related_questions": False
-        }
+            temperature=0.7
+        )
         
-        try:
-            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self.timeout)) as session:
-                async with session.post(self.base_url, headers=headers, json=payload) as response:
-                    if response.status == 200:
-                        result = await response.json()
-                        
-                        # Extract content from response
-                        content = result.get("choices", [{}])[0].get("message", {}).get("content", "")
-                        
-                        # Add citations if available
-                        citations = result.get("citations", [])
-                        if citations:
-                            content += "\n\nSources:"
-                            for i, citation in enumerate(citations[:3], 1):
-                                content += f"\n{i}. {citation}"
-                        
-                        return content or "No information found for this query."
-                    
-                    else:
-                        error_text = await response.text()
-                        print(f"Perplexity API error {response.status}: {error_text}")
-                        return "Sorry, I couldn't retrieve real-time information right now."
+        mj_response = response.get("content", "").strip()
+        print(f"🌐 Pure MJ web response: {mj_response[:100]}...")
+        return mj_response
         
-        except aiohttp.ClientError as e:
-            print(f"Perplexity connection error: {e}")
-            return "Sorry, I'm having trouble connecting to real-time information sources."
-        
-        except json.JSONDecodeError as e:
-            print(f"Perplexity JSON decode error: {e}")
-            return "Sorry, I received an invalid response from the information source."
-        
-        except Exception as e:
-            print(f"Perplexity unexpected error: {e}")
-            return "Sorry, an unexpected error occurred while searching for information."
-    
-    async def search_with_context(
-        self,
-        query: str,
-        context: str,
-        max_tokens: int = 400
-    ) -> str:
-        """Search with additional context for better results"""
-        
-        enhanced_query = f"Context: {context}\n\nQuery: {query}"
-        return await self.search(enhanced_query, max_tokens)
-    
-    async def get_current_events(self, topic: str = "world news") -> str:
-        """Get current events on a specific topic"""
-        
-        query = f"What are the latest {topic} from today? Please provide a brief summary of the most important recent developments."
-        return await self.search(query)
-    
-    async def get_weather(self, location: str) -> str:
-        """Get current weather for a location"""
-        
-        query = f"What is the current weather in {location}? Include temperature, conditions, and any weather alerts."
-        return await self.search(query)
-    
-    async def get_stock_price(self, symbol: str) -> str:
-        """Get current stock price and basic information"""
-        
-        query = f"What is the current stock price and recent performance of {symbol}?"
-        return await self.search(query)
-    
-    async def verify_fact(self, fact: str) -> str:
-        """Verify or fact-check a statement"""
-        
-        query = f"Please verify this information and provide accurate, up-to-date details: {fact}"
-        return await self.search(query)
+    except Exception as e:
+        print(f"🌐 OpenAI error: {e}")
+        return f"*(struggling)* I found some info but I'm having trouble processing it... gimme a sec?"
 
-# Create singleton instance for easy import
-perplexity_client = PerplexityClient()
+def search_web(query: str) -> str:
+    """Get raw web search results from Perplexity"""
+    print(f"🔍 SEARCHING PERPLEXITY: {query}")
+    
+    headers = {
+        "Authorization": f"Bearer {PERPLEXITY_API_KEY}",
+        "Content-Type": "application/json",
+    }
+    
+    data = {
+        "model": "sonar-pro",
+        "messages": [
+            {"role": "user", "content": query}
+        ],
+        "max_tokens": 300,
+        "temperature": 0.1
+    }
+
+    try:
+        response = requests.post(PERPLEXITY_URL, headers=headers, json=data, timeout=15)
+        print(f"🔍 PERPLEXITY STATUS: {response.status_code}")
+        
+        if response.status_code != 200:
+            print(f"🔍 PERPLEXITY ERROR: {response.text}")
+            return f"Search failed with status {response.status_code}"
+        
+        result = response.json()
+        
+        if "choices" in result and len(result["choices"]) > 0:
+            content = result["choices"][0]["message"]["content"]
+            print(f"🔍 PERPLEXITY SUCCESS: {content[:100]}...")
+            return content
+        else:
+            return "No search results found for that query"
+            
+    except Exception as e:
+        print(f"🔍 PERPLEXITY EXCEPTION: {e}")
+        return f"Search error: {str(e)}"

@@ -1,0 +1,19 @@
+{
+  "model_name": "MJ_Smart_Router",
+  "version": "1.0.0",
+  "created_date": "2025-08-07T16:37:32.368501",
+  "training_accuracy": 0.9583333333333334,
+  "test_accuracy": 0.9141104294478528,
+  "avg_prediction_time_ms": 0.0017376765151696702,
+  "total_training_examples": 648,
+  "total_test_examples": 163,
+  "categories": [
+    "educational",
+    "medical",
+    "personal",
+    "web_search"
+  ],
+  "feature_count": 238,
+  "speed_improvement": "575481x faster than baseline",
+  "status": "PRODUCTION_READY"
+}

@@ -1,6 +1,6 @@
 
 # src/models/database/conversation.py
-from sqlalchemy import Column, Integer, String, DateTime, Text, ForeignKey, Enum, ARRAY
+from sqlalchemy import Column, Integer, String, DateTime, Text, Enum, ForeignKey, ARRAY, Float
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from sqlalchemy.dialects.postgresql import UUID

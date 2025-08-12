@@ -1,160 +1,108 @@
-
 # src/services/ai/mode_classifier.py
-from typing import Dict, List, Tuple
-import re
 from ...models.schemas.chat import PersonalityMode
+from .classifier.smart_router import MJSmartRouter
 
 class ModeClassifier:
     def __init__(self):
-        self.keywords = {
-            PersonalityMode.KALKI: [
-                # Emergency/Crisis keywords
-                "help", "emergency", "danger", "scared", "afraid", "panic",
-                "following me", "stalking", "unsafe", "threatened", "attack",
-                "hurt me", "violence", "abuse", "trapped", "lost", "alone at night",
-                "stranger", "suspicious", "creepy", "harassment", "assault",
-                "call police", "911", "emergency room", "hospital", "ambulance",
-                # Emotional crisis
-                "suicide", "kill myself", "self harm", "cutting", "overdose",
-                "end it all", "can't go on", "hopeless", "worthless",
-            ],
+        """Initialize the smart router for ML-powered mode classification"""
+        try:
+            self.smart_router = MJSmartRouter()
+            self.router_available = True
+            print("🧠 ML-powered mode classification ready!")
+        except Exception as e:
+            print(f"⚠️ Smart router failed to load: {e}")
+            print("🔄 Falling back to keyword-based classification")
+            self.router_available = False
+    
+    def classify_mode(self, message: str, current_mode: PersonalityMode, user_context: dict = None) -> tuple:
+        """
+        Classify the appropriate personality mode for the message
+        
+        Args:
+            message: User's message
+            current_mode: Current personality mode
+            user_context: Additional user context
             
-            PersonalityMode.JUPITER: [
-                # Deep emotional support keywords
-                "depressed", "anxiety", "lonely", "heartbroken", "devastated",
-                "grieving", "lost someone", "breakup", "divorce", "death",
-                "trauma", "ptsd", "therapy", "counselor", "medication",
-                "crying", "tears", "emotional", "feelings", "hurt inside",
-                "empty", "numb", "overwhelmed", "breakdown", "mental health",
-                "love", "relationship problems", "family issues", "friendship",
-                "betrayed", "abandoned", "rejected", "unloved", "insecure",
-            ],
+        Returns:
+            tuple: (PersonalityMode, routing_info: dict)
+        """
+        
+        if self.router_available:
+            return self._ml_classify(message, current_mode, user_context)
+        else:
+            return self._fallback_classify(message, current_mode, user_context)
+    
+    def _ml_classify(self, message: str, current_mode: PersonalityMode, user_context: dict) -> tuple:
+        """ML-powered classification using the trained model"""
+        
+        # Get routing result from ML model
+        routing_result = self.smart_router.route_with_confidence(message)
+        
+        module = routing_result['module']
+        confidence = routing_result['confidence']
+        all_probs = routing_result['all_probabilities']
+        
+        # Map ML modules to personality modes based on confidence thresholds
+        if module == 'medical' and confidence > 0.7:
+            new_mode = PersonalityMode.HEALTHCARE
+            print(f"🏥 HEALTHCARE mode activated (confidence: {confidence:.2f})")
             
-            PersonalityMode.EDUCATIONAL: [
-                # Learning and teaching keywords
-                "learn", "teach", "explain", "understand", "study", "homework",
-                "assignment", "project", "research", "knowledge", "education",
-                "school", "college", "university", "course", "class", "lesson",
-                "exam", "test", "grade", "academic", "subject", "topic",
-                "how does", "why does", "what is", "how to", "tutorial",
-                "guide", "instructions", "steps", "method", "technique",
-                "skill", "practice", "training", "certification", "degree",
-            ],
+        elif module == 'educational' and confidence > 0.8:
+            new_mode = PersonalityMode.EDUCATIONAL  
+            print(f"📚 EDUCATIONAL mode activated (confidence: {confidence:.2f})")
             
-            PersonalityMode.HEALTHCARE: [
-                # Health and medical keywords
-                "health", "medical", "doctor", "hospital", "medicine", "symptom",
-                "pain", "sick", "illness", "disease", "condition", "treatment",
-                "diagnosis", "prescription", "medication", "therapy", "surgery",
-                "appointment", "clinic", "nurse", "specialist", "emergency room",
-                "headache", "fever", "nausea", "dizzy", "fatigue", "weakness",
-                "chest pain", "shortness of breath", "allergic reaction",
-                "injury", "accident", "bleeding", "broken", "sprain", "strain",
-                "mental health", "depression", "anxiety disorder", "bipolar",
-            ]
+        elif module == 'web_search' and confidence > 0.85:
+            # Keep current personality but flag for web search
+            new_mode = current_mode
+            print(f"🌐 Web search needed (confidence: {confidence:.2f})")
+            
+        else:
+            # Check for emergency keywords that override ML prediction
+            emergency_keywords = ['suicide', 'kill myself', 'end it all', 'want to die', 'hurt myself']
+            if any(keyword in message.lower() for keyword in emergency_keywords):
+                new_mode = PersonalityMode.KALKI
+                print("🚨 KALKI mode activated - EMERGENCY DETECTED")
+            else:
+                new_mode = PersonalityMode.MJ
+                print(f"💭 MJ mode (personal conversation - confidence: {confidence:.2f})")
+        
+        # Enhanced routing info for the chat handler
+        routing_info = {
+            'ml_prediction': module,
+            'confidence': confidence,
+            'all_probabilities': all_probs,
+            'should_search_web': module == 'web_search' and confidence > 0.85,
+            'should_use_medical': module == 'medical' and confidence > 0.7,
+            'should_use_educational': module == 'educational' and confidence > 0.8,
+            'routing_time_ms': routing_result['routing_time_ms']
         }
         
-        # Priority order (higher priority modes checked first)
-        self.priority_order = [
-            PersonalityMode.KALKI,      # Highest priority - emergency
-            PersonalityMode.HEALTHCARE, # Medical emergencies
-            PersonalityMode.JUPITER,    # Emotional support
-            PersonalityMode.EDUCATIONAL, # Learning
-        ]
+        return new_mode, routing_info
     
-    def classify_mode(
-        self,
-        message: str,
-        current_mode: PersonalityMode = PersonalityMode.MJ,
-        user_context: Dict = None
-    ) -> Tuple[PersonalityMode, float]:
-        """
-        Classify the appropriate personality mode for a message
-        Returns: (mode, confidence_score)
-        """
+    def _fallback_classify(self, message: str, current_mode: PersonalityMode, user_context: dict) -> tuple:
+        """Fallback keyword-based classification if ML router fails"""
+        
         message_lower = message.lower()
         
-        # Calculate scores for each mode
-        mode_scores = {}
+        # Emergency keywords - highest priority
+        emergency_keywords = ['suicide', 'kill myself', 'end it all', 'want to die', 'hurt myself', 'help me', 'danger']
+        if any(keyword in message_lower for keyword in emergency_keywords):
+            return PersonalityMode.KALKI, {'fallback': True, 'reason': 'emergency_keywords'}
         
-        for mode in self.priority_order:
-            score = self._calculate_mode_score(message_lower, mode)
-            mode_scores[mode] = score
+        # Medical keywords
+        medical_keywords = ['pain', 'hurt', 'sick', 'fever', 'bleeding', 'injury', 'doctor', 'hospital', 'symptoms']
+        if any(keyword in message_lower for keyword in medical_keywords):
+            return PersonalityMode.HEALTHCARE, {'fallback': True, 'reason': 'medical_keywords'}
         
-        # Find the highest scoring mode
-        best_mode = max(mode_scores.items(), key=lambda x: x[1])
+        # Educational keywords  
+        educational_keywords = ['explain', 'how does', 'what is', 'teach me', 'learn', 'understand', 'homework']
+        if any(keyword in message_lower for keyword in educational_keywords):
+            return PersonalityMode.EDUCATIONAL, {'fallback': True, 'reason': 'educational_keywords'}
         
-        # Apply threshold - only switch if confidence is high enough
-        confidence_threshold = self._get_threshold_for_mode(best_mode[0])
+        # Web search keywords
+        web_keywords = ['current', 'latest', 'news', 'today', 'now', 'what\'s happening']
+        if any(keyword in message_lower for keyword in web_keywords):
+            return current_mode, {'fallback': True, 'reason': 'web_search_keywords', 'should_search_web': True}
         
-        if best_mode[1] >= confidence_threshold:
-            return best_mode[0], best_mode[1]
-        else:
-            # Stay in current mode if no strong signal
-            return current_mode, 0.5
-    
-    def _calculate_mode_score(self, message: str, mode: PersonalityMode) -> float:
-        """Calculate relevance score for a specific mode"""
-        if mode not in self.keywords:
-            return 0.0
-        
-        keywords = self.keywords[mode]
-        total_score = 0.0
-        
-        for keyword in keywords:
-            # Exact match gets full score
-            if keyword in message:
-                weight = self._get_keyword_weight(keyword, mode)
-                total_score += weight
-                
-            # Partial match gets reduced score
-            elif any(word in message for word in keyword.split()):
-                weight = self._get_keyword_weight(keyword, mode) * 0.5
-                total_score += weight
-        
-        # Normalize score by number of keywords
-        normalized_score = min(total_score / len(keywords) * 10, 1.0)
-        
-        return normalized_score
-    
-    def _get_keyword_weight(self, keyword: str, mode: PersonalityMode) -> float:
-        """Get weight for specific keywords based on urgency/importance"""
-        
-        # Emergency keywords get highest weight
-        emergency_keywords = ["help", "emergency", "danger", "911", "police", "suicide", "kill myself"]
-        if keyword in emergency_keywords:
-            return 1.0
-        
-        # Medical urgency keywords
-        medical_urgent = ["chest pain", "can't breathe", "overdose", "allergic reaction", "bleeding"]
-        if keyword in medical_urgent:
-            return 0.9
-        
-        # High emotional distress
-        emotional_urgent = ["heartbroken", "devastated", "breakdown", "trauma", "grief"]
-        if keyword in emotional_urgent:
-            return 0.8
-        
-        # Standard keywords
-        return 0.3
-    
-    def _get_threshold_for_mode(self, mode: PersonalityMode) -> float:
-        """Get confidence threshold required to switch to a mode"""
-        thresholds = {
-            PersonalityMode.KALKI: 0.3,      # Low threshold for emergencies
-            PersonalityMode.HEALTHCARE: 0.4, # Low threshold for health issues
-            PersonalityMode.JUPITER: 0.5,    # Medium threshold for emotional support
-            PersonalityMode.EDUCATIONAL: 0.6, # Higher threshold for educational mode
-        }
-        return thresholds.get(mode, 0.5)
-    
-    def get_mode_explanation(self, mode: PersonalityMode) -> str:
-        """Get explanation for why a mode was selected"""
-        explanations = {
-            PersonalityMode.KALKI: "Detected potential emergency or crisis situation. Switching to protective mode.",
-            PersonalityMode.JUPITER: "Detected emotional distress or need for deeper support. Switching to empathetic mode.",
-            PersonalityMode.HEALTHCARE: "Detected health-related concerns. Switching to healthcare support mode.",
-            PersonalityMode.EDUCATIONAL: "Detected learning or educational request. Switching to teaching mode.",
-            PersonalityMode.MJ: "Continuing in default conversational mode."
-        }
-        return explanations.get(mode, "Mode selected based on conversation context.")
+        # Default to MJ mode
+        return PersonalityMode.MJ, {'fallback': True, 'reason': 'default'}

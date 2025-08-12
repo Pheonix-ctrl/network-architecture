@@ -1,165 +1,159 @@
+# src/services/memory/redis_client.py - Add missing WebSocket methods
 
-# src/services/memory/redis_client.py
-import aioredis
+import redis
+import logging
+from typing import Optional, Any
 import json
-from typing import List, Dict, Optional, Any
-from datetime import timedelta
-from ...config.settings import Settings
-from ...models.schemas.memory import MemoryResponse
+from datetime import datetime
 
-settings = Settings()
+logger = logging.getLogger(__name__)
 
 class RedisClient:
-    def __init__(self):
-        self.redis: Optional[aioredis.Redis] = None
-    
+    def __init__(self, host: str = "localhost", port: int = 6379, db: int = 0):
+        self.host = host
+        self.port = port
+        self.db = db
+        self.client: Optional[redis.Redis] = None
+        self.is_connected = False
+        
     async def connect(self):
-        """Connect to Redis"""
+        """Connect to Redis with proper error handling"""
         try:
-            self.redis = await aioredis.from_url(
-                settings.REDIS_URL,
-                password=settings.REDIS_PASSWORD,
-                decode_responses=True
+            self.client = redis.Redis(
+                host=self.host, 
+                port=self.port, 
+                db=self.db,
+                decode_responses=True,
+                socket_connect_timeout=5,
+                socket_timeout=5,
+                retry_on_timeout=True
             )
+            
+            # Test connection
+            self.client.ping()
+            self.is_connected = True
+            logger.info(f"✅ Redis connected successfully at {self.host}:{self.port}")
+            return True
+            
+        except redis.ConnectionError as e:
+            logger.warning(f"Redis connection failed: {e}")
+            logger.info("🔄 Continuing without Redis caching...")
+            self.is_connected = False
+            self.client = None
+            return False
+            
         except Exception as e:
-            print(f"Redis connection error: {e}")
-            self.redis = None
+            logger.error(f"Unexpected Redis error: {e}")
+            self.is_connected = False
+            self.client = None
+            return False
     
-    async def disconnect(self):
+    async def get(self, key: str) -> Optional[Any]:
+        """Get value from Redis with fallback"""
+        if not self.is_connected or not self.client:
+            return None
+            
+        try:
+            value = self.client.get(key)
+            if value:
+                return json.loads(value)
+            return None
+        except Exception as e:
+            logger.warning(f"Redis GET error for key {key}: {e}")
+            return None
+    
+    async def set(self, key: str, value: Any, ttl: int = 3600) -> bool:
+        """Set value in Redis with fallback"""
+        if not self.is_connected or not self.client:
+            return False
+            
+        try:
+            self.client.setex(key, ttl, json.dumps(value))
+            return True
+        except Exception as e:
+            logger.warning(f"Redis SET error for key {key}: {e}")
+            return False
+    
+    async def delete(self, key: str) -> bool:
+        """Delete key from Redis"""
+        if not self.is_connected or not self.client:
+            return False
+            
+        try:
+            self.client.delete(key)
+            return True
+        except Exception as e:
+            logger.warning(f"Redis DELETE error for key {key}: {e}")
+            return False
+    
+    # ADD THESE MISSING WEBSOCKET METHODS:
+    async def store_websocket_session(self, user_id: int, session_data: dict = None) -> bool:
+        """Store WebSocket session information"""
+        if not self.is_connected:
+            return False
+            
+        try:
+            if not session_data:
+                session_data = {
+                    "user_id": user_id,
+                    "connected_at": datetime.utcnow().isoformat(),
+                    "status": "active"
+                }
+            
+            key = f"ws_session:{user_id}"
+            return await self.set(key, session_data, ttl=86400)  # 24 hours
+            
+        except Exception as e:
+            logger.warning(f"Failed to store WebSocket session for user {user_id}: {e}")
+            return False
+    
+    async def remove_websocket_session(self, user_id: int) -> bool:
+        """Remove WebSocket session"""
+        if not self.is_connected:
+            return False
+            
+        try:
+            key = f"ws_session:{user_id}"
+            return await self.delete(key)
+            
+        except Exception as e:
+            logger.warning(f"Failed to remove WebSocket session for user {user_id}: {e}")
+            return False
+    
+    async def get_websocket_session(self, user_id: int) -> Optional[dict]:
+        """Get WebSocket session information"""
+        if not self.is_connected:
+            return None
+            
+        try:
+            key = f"ws_session:{user_id}"
+            return await self.get(key)
+            
+        except Exception as e:
+            logger.warning(f"Failed to get WebSocket session for user {user_id}: {e}")
+            return None
+    
+    def disconnect(self):
         """Disconnect from Redis"""
-        if self.redis:
-            await self.redis.close()
-    
-    # Memory Caching
-    async def cache_memories(
-        self,
-        user_id: int,
-        query: str,
-        memories: List[MemoryResponse],
-        ttl: int = 3600  # 1 hour
-    ):
-        """Cache memory search results"""
-        if not self.redis:
-            return
-        
-        try:
-            key = f"memories:{user_id}:{hash(query)}"
-            value = json.dumps([memory.dict() for memory in memories])
-            await self.redis.setex(key, ttl, value)
-        except Exception as e:
-            print(f"Redis cache error: {e}")
-    
-    async def get_cached_memories(
-        self,
-        user_id: int,
-        query: str
-    ) -> Optional[List[MemoryResponse]]:
-        """Get cached memory search results"""
-        if not self.redis:
-            return None
-        
-        try:
-            key = f"memories:{user_id}:{hash(query)}"
-            cached = await self.redis.get(key)
-            if cached:
-                data = json.loads(cached)
-                return [MemoryResponse(**item) for item in data]
-        except Exception as e:
-            print(f"Redis get error: {e}")
-        
-        return None
-    
-    async def invalidate_user_memory_cache(self, user_id: int):
-        """Invalidate all cached memories for a user"""
-        if not self.redis:
-            return
-        
-        try:
-            pattern = f"memories:{user_id}:*"
-            keys = await self.redis.keys(pattern)
-            if keys:
-                await self.redis.delete(*keys)
-        except Exception as e:
-            print(f"Redis invalidate error: {e}")
-    
-    # WebSocket Session Management
-    async def store_websocket_session(
-        self,
-        user_id: int,
-        session_id: str,
-        connection_data: Dict[str, Any]
-    ):
-        """Store WebSocket session data"""
-        if not self.redis:
-            return
-        
-        try:
-            key = f"ws_session:{user_id}:{session_id}"
-            value = json.dumps(connection_data)
-            await self.redis.setex(key, 3600, value)  # 1 hour TTL
-        except Exception as e:
-            print(f"Redis session store error: {e}")
-    
-    async def get_websocket_session(
-        self,
-        user_id: int,
-        session_id: str
-    ) -> Optional[Dict[str, Any]]:
-        """Get WebSocket session data"""
-        if not self.redis:
-            return None
-        
-        try:
-            key = f"ws_session:{user_id}:{session_id}"
-            data = await self.redis.get(key)
-            return json.loads(data) if data else None
-        except Exception as e:
-            print(f"Redis session get error: {e}")
-            return None
-    
-    # MJ Network Discovery
-    async def register_mj_instance(
-        self,
-        mj_id: str,
-        user_info: Dict[str, Any],
-        ttl: int = 300  # 5 minutes
-    ):
-        """Register MJ instance for network discovery"""
-        if not self.redis:
-            return
-        
-        try:
-            key = f"mj_network:{mj_id}"
-            value = json.dumps({
-                **user_info,
-                "last_seen": datetime.now().isoformat(),
-                "status": "online"
-            })
-            await self.redis.setex(key, ttl, value)
-        except Exception as e:
-            print(f"Redis MJ register error: {e}")
-    
-    async def discover_nearby_mjs(
-        self,
-        location_hash: str,
-        limit: int = 10
-    ) -> List[Dict[str, Any]]:
-        """Discover nearby MJ instances"""
-        if not self.redis:
-            return []
-        
-        try:
-            # This is a simplified version - in production you'd use geo-hashing
-            pattern = f"mj_network:*"
-            keys = await self.redis.keys(pattern)
-            
-            nearby_mjs = []
-            for key in keys[:limit]:
-                data = await self.redis.get(key)
-                if data:
-                    nearby_mjs.append(json.loads(data))
-            
-            return nearby_mjs
-        except Exception as e:
-            print(f"Redis MJ discovery error: {e}")
-            return []
+        if self.client:
+            try:
+                self.client.close()
+                logger.info("Redis connection closed")
+            except Exception as e:
+                logger.warning(f"Error closing Redis connection: {e}")
+            finally:
+                self.client = None
+                self.is_connected = False
+
+# Global Redis client instance
+redis_client = RedisClient()
+
+# Startup function for FastAPI
+async def init_redis():
+    """Initialize Redis connection at startup"""
+    success = await redis_client.connect()
+    if success:
+        print("✅ Redis connected")
+    else:
+        print("⚠️ Redis unavailable - running without caching")
+    return success

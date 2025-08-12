@@ -4,6 +4,7 @@ from fastapi.security import HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import timedelta
 from typing import Dict, Any
+from pydantic import BaseModel
 
 from ...config.database import get_db_session
 from ...config.settings import Settings
@@ -18,6 +19,10 @@ from ...utils.validators import validate_password_strength
 router = APIRouter()
 settings = Settings()
 security = HTTPBearer()
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
 
 @router.post("/register", response_model=Dict[str, Any])
 async def register_user(
@@ -55,8 +60,11 @@ async def register_user(
     
     # Create user
     user = await user_repo.create({
-        **user_data.dict(exclude={"password"}),
-        "password_hash": hashed_password
+        "username": user_data.username,
+        "email": user_data.email,
+        "password_hash": hashed_password,
+        "mj_instance_id": f"MJ-{user_data.username.upper()}-{hash(user_data.email) % 10000:04d}",
+        "preferred_mode": "mj"  # Use string that matches enum value
     })
     
     # Generate tokens
@@ -67,32 +75,36 @@ async def register_user(
         "access_token": access_token,
         "refresh_token": refresh_token,
         "token_type": "bearer",
-        "user": UserResponse.from_orm(user),
+        "user": {
+            "id": user.id,
+            "username": user.username,
+            "email": user.email,
+            "mj_instance_id": user.mj_instance_id,
+            "preferred_mode": user.preferred_mode.value if user.preferred_mode else "mj",
+            "is_online": user.is_online,
+            "created_at": user.created_at,
+            "updated_at": user.updated_at
+        },
         "expires_in": settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60
     }
 
 @router.post("/login", response_model=Dict[str, Any])
 async def login_user(
-    email: str,
-    password: str,
+    login_data: LoginRequest,
     db: AsyncSession = Depends(get_db_session)
 ):
     """Login user and return tokens"""
     
     user_repo = UserRepository(db)
-    user = await user_repo.get_by_email(email)
+    user = await user_repo.get_by_email(login_data.email)
     
-    if not user or not verify_password(password, user.password_hash):
+    if not user or not verify_password(login_data.password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password"
         )
     
-    if not user.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Account is disabled"
-        )
+    # Note: removed is_active check since it doesn't exist in our database schema
     
     # Update last active
     await user_repo.update_last_active(user.id)
@@ -105,7 +117,16 @@ async def login_user(
         "access_token": access_token,
         "refresh_token": refresh_token,
         "token_type": "bearer",
-        "user": UserResponse.from_orm(user),
+        "user": {
+            "id": user.id,
+            "username": user.username,
+            "email": user.email,
+            "mj_instance_id": user.mj_instance_id,
+            "preferred_mode": user.preferred_mode.value if user.preferred_mode else "mj",
+            "is_online": user.is_online,
+            "created_at": user.created_at,
+            "updated_at": user.updated_at
+        },
         "expires_in": settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60
     }
 
@@ -159,12 +180,21 @@ async def refresh_token(
             detail="Invalid refresh token"
         )
 
-@router.get("/me", response_model=UserResponse)
+@router.get("/me")
 async def get_current_user_info(
     current_user: User = Depends(get_authenticated_user)
 ):
     """Get current user information"""
-    return UserResponse.from_orm(current_user)
+    return {
+        "id": current_user.id,
+        "username": current_user.username,
+        "email": current_user.email,
+        "mj_instance_id": current_user.mj_instance_id,
+        "preferred_mode": current_user.preferred_mode.value if current_user.preferred_mode else "mj",
+        "is_online": current_user.is_online,
+        "created_at": current_user.created_at,
+        "updated_at": current_user.updated_at
+    }
 
 @router.put("/me", response_model=UserResponse)
 async def update_current_user(
@@ -197,4 +227,3 @@ async def logout_user(
     await redis.disconnect()
     
     return {"message": "Successfully logged out"}
-
