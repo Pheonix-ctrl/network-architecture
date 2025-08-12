@@ -42,16 +42,16 @@ class ModeClassifier:
         confidence = routing_result['confidence']
         all_probs = routing_result['all_probabilities']
         
-        # Map ML modules to personality modes based on confidence thresholds
-        if module == 'medical' and confidence > 0.7:
+        # Map ML modules to personality modes with LOWERED confidence thresholds
+        if module == 'medical' and confidence > 0.40:  # LOWERED from 0.7 to 0.4
             new_mode = PersonalityMode.HEALTHCARE
             print(f"🏥 HEALTHCARE mode activated (confidence: {confidence:.2f})")
             
-        elif module == 'educational' and confidence > 0.8:
+        elif module == 'educational' and confidence > 0.50:  # LOWERED from 0.8 to 0.5
             new_mode = PersonalityMode.EDUCATIONAL  
             print(f"📚 EDUCATIONAL mode activated (confidence: {confidence:.2f})")
             
-        elif module == 'web_search' and confidence > 0.85:
+        elif module == 'web_search' and confidence > 0.50:  # LOWERED from 0.85 to 0.5
             # Keep current personality but flag for web search
             new_mode = current_mode
             print(f"🌐 Web search needed (confidence: {confidence:.2f})")
@@ -66,14 +66,14 @@ class ModeClassifier:
                 new_mode = PersonalityMode.MJ
                 print(f"💭 MJ mode (personal conversation - confidence: {confidence:.2f})")
         
-        # Enhanced routing info for the chat handler
+        # Enhanced routing info for the chat handler with LOWERED thresholds
         routing_info = {
             'ml_prediction': module,
             'confidence': confidence,
             'all_probabilities': all_probs,
-            'should_search_web': module == 'web_search' and confidence > 0.85,
-            'should_use_medical': module == 'medical' and confidence > 0.7,
-            'should_use_educational': module == 'educational' and confidence > 0.8,
+            'should_search_web': module == 'web_search' and confidence > 0.50,  # LOWERED from 0.85
+            'should_use_medical': module == 'medical' and confidence > 0.40,    # LOWERED from 0.7
+            'should_use_educational': module == 'educational' and confidence > 0.50,  # LOWERED from 0.8
             'routing_time_ms': routing_result['routing_time_ms']
         }
         
@@ -89,20 +89,20 @@ class ModeClassifier:
         if any(keyword in message_lower for keyword in emergency_keywords):
             return PersonalityMode.KALKI, {'fallback': True, 'reason': 'emergency_keywords'}
         
-        # Medical keywords
-        medical_keywords = ['pain', 'hurt', 'sick', 'fever', 'bleeding', 'injury', 'doctor', 'hospital', 'symptoms']
+        # Medical keywords - be more aggressive
+        medical_keywords = ['pain', 'hurt', 'sick', 'fever', 'bleeding', 'injury', 'doctor', 'hospital', 'symptoms', 'ache', 'aching', 'stomach', 'headache', 'back', 'muscle', 'heart', 'chest']
         if any(keyword in message_lower for keyword in medical_keywords):
-            return PersonalityMode.HEALTHCARE, {'fallback': True, 'reason': 'medical_keywords'}
+            return PersonalityMode.HEALTHCARE, {'fallback': True, 'reason': 'medical_keywords', 'confidence': 0.75}
         
-        # Educational keywords  
-        educational_keywords = ['explain', 'how does', 'what is', 'teach me', 'learn', 'understand', 'homework']
+        # Educational keywords - be more aggressive
+        educational_keywords = ['explain', 'how does', 'what is', 'teach me', 'learn', 'understand', 'homework', 'thermodynamics', 'physics', 'chemistry', 'calculus', 'quantum', 'concept', 'theory']
         if any(keyword in message_lower for keyword in educational_keywords):
-            return PersonalityMode.EDUCATIONAL, {'fallback': True, 'reason': 'educational_keywords'}
+            return PersonalityMode.EDUCATIONAL, {'fallback': True, 'reason': 'educational_keywords', 'confidence': 0.85}
         
-        # Web search keywords
-        web_keywords = ['current', 'latest', 'news', 'today', 'now', 'what\'s happening']
+        # Web search keywords - be more aggressive
+        web_keywords = ['current', 'latest', 'news', 'today', 'now', 'what\'s happening', 'search', 'find', 'look up', 'web', 'google', 'stock', 'price', 'match', 'game', 'recent']
         if any(keyword in message_lower for keyword in web_keywords):
-            return current_mode, {'fallback': True, 'reason': 'web_search_keywords', 'should_search_web': True}
+            return current_mode, {'fallback': True, 'reason': 'web_search_keywords', 'should_search_web': True, 'confidence': 0.80}
         
         # Default to MJ mode
-        return PersonalityMode.MJ, {'fallback': True, 'reason': 'default'}
+        return PersonalityMode.MJ, {'fallback': True, 'reason': 'default', 'confidence': 0.6}
