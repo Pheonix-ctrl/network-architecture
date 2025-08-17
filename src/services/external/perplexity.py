@@ -1,8 +1,10 @@
-# perplexity.py - DATA ONLY VERSION (No MJ personality)
+import os
 import requests
+from dotenv import load_dotenv
 
-# === API Keys ===
-PERPLEXITY_API_KEY = "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"
+# === Load API Keys from .env ===
+load_dotenv()
+PERPLEXITY_API_KEY = os.getenv("PERPLEXITY_API_KEY")
 PERPLEXITY_URL = "https://api.perplexity.ai/chat/completions"
 
 async def get_web_data(user_message: str) -> str:
