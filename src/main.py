@@ -35,12 +35,12 @@ class ChatMessage(BaseModel):
     message: str
 
 # JWT settings
-SECRET_KEY = "mj_network_secret_key_2025"
+SECRET_KEY = "mj_network........"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
 # Database connection
-DATABASE_URL = "postgresql://postgres:Teamawaken%402025@db.ahftijzjctexijhfpphk.supabase.co:5432/postgres"
+DATABASE_URL = "postgresql:/....."
 
 # Global database pool
 db_pool = None
