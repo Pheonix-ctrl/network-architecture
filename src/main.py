@@ -1,22 +1,25 @@
-# src/main.py - UPDATED with MJ Network Integration
+# src/main.py
 import sys
 import os
 import asyncio
-import logging
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Depends, status
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Depends
 from fastapi.security import HTTPBearer
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 import asyncpg
 import bcrypt
-import jwt
-from datetime import datetime, timedelta
+from datetime import datetime
 import json
+# If you will enforce SSL for asyncpg (Supabase), uncomment:
+# import ssl
 
 # Add src to path for imports
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+
+# Centralized JWT/crypto utilities
+from src.core.security import create_access_token, verify_token
+
 
 # Set OpenAI API key for modules that use it directly
 import openai
@@ -35,13 +38,14 @@ class RegisterRequest(BaseModel):
 class ChatMessage(BaseModel):
     message: str
 
-# JWT settings
-SECRET_KEY = "mj_network_secret_key_change_in_production"
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
-# Database connection
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://mj_user:mj_password@localhost:5432/mj_network")
+
+# Database connection - FIXED URLs
+SQLALCHEMY_DATABASE_URL = "postgresql+asyncpg:/jhfpphk.supabase.co:5432/postgres"
+ASYNCPG_DATABASE_URL = "postgresql://postgres:tijzjctexijhfpphk.supabase.co:5432/postgres"
+
+# For backwards compatibility
+DATABASE_URL = SQLALCHEMY_DATABASE_URL
 
 # Global database pool
 db_pool = None
@@ -50,12 +54,12 @@ async def get_db_pool():
     global db_pool
     if not db_pool:
         try:
-            db_pool = await asyncpg.create_pool(DATABASE_URL)
+            # Use the plain PostgreSQL URL for asyncpg.create_pool()
+            db_pool = await asyncpg.create_pool(ASYNCPG_DATABASE_URL)
             print("✅ Database pool created")
         except Exception as e:
             print(f"❌ Database pool failed: {e}")
     return db_pool
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
@@ -100,38 +104,26 @@ app.add_middleware(
 # Security
 security = HTTPBearer(auto_error=False)
 
-def create_access_token(data: dict):
-    to_encode = data.copy()
-    expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    to_encode.update({"exp": expire})
-    token = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-    print(f"🔑 Created token for user {data.get('sub')}")
-    return token
-
 async def get_current_user(token = Depends(security)):
     if not token:
         print("❌ No token provided")
         raise HTTPException(status_code=401, detail="No token provided")
-    
+
     try:
-        print(f"🔍 Verifying token...")
-        payload = jwt.decode(token.credentials, SECRET_KEY, algorithms=[ALGORITHM])
+        print("🔍 Verifying token...")
+        payload = verify_token(token.credentials)  # from src.core.security
         user_id_str = payload.get("sub")
-        print(f"✅ Token valid for user: {user_id_str}")
         if user_id_str is None:
             raise HTTPException(status_code=401, detail="Invalid token")
-        # Convert back to integer
         user_id = int(user_id_str)
+        print(f"✅ Token valid for user: {user_id}")
         return user_id
-    except jwt.ExpiredSignatureError:
-        print("❌ Token expired")
-        raise HTTPException(status_code=401, detail="Token expired")
-    except jwt.InvalidTokenError as e:
-        print(f"❌ Invalid token: {e}")
-        raise HTTPException(status_code=401, detail="Invalid token")
+    except HTTPException:
+        raise
     except Exception as e:
         print(f"❌ Token verification error: {e}")
         raise HTTPException(status_code=401, detail="Authentication failed")
+
 
 # Include MJ Network API routes
 from src.api.v1.mj_network import router as mj_network_router
@@ -879,7 +871,7 @@ async def get_mj_network_status():
             stats['online_mjs'] = await conn.fetchval("SELECT COUNT(*) FROM mj_registry WHERE status = 'online'")
             
             # Total relationships
-            stats['total_relationships'] = await conn.fetchval("SELECT COUNT(*) FROM relationships WHERE status = 'active'")
+            stats['total_relationships'] = await conn.fetchval("SELECT COUNT(*) FROM relationships_network WHERE status = 'active'")
             
             # Total MJ conversations
             stats['total_mj_conversations'] = await conn.fetchval("SELECT COUNT(*) FROM mj_conversations WHERE status = 'active'")

@@ -1,10 +1,10 @@
-# src/services/mj_network/friend_management.py
+# src/services/mj_network/friend_management.py - FIXED VERSION
 from typing import Dict, Any, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime
 
-from ...database.repositories.mj_network import MJNetworkRepository
-from ...models.database.mj_network import FriendRequestStatus, RelationshipStatus
+from ...database.repositories.mj_network import MJNetworkRepository  # ← FIXED: Updated import path
+from ...models.database.mj_network import FriendRequestStatus, RelationshipStatus  # ← FIXED: Updated import path
 
 class FriendManagementService:
     """Service for managing friend requests and relationships"""
@@ -70,8 +70,9 @@ class FriendManagementService:
         if friend_request.to_user_id != accepting_user_id:
             raise ValueError("You can only accept requests sent to you")
         
-        if friend_request.status != FriendRequestStatus.PENDING:
+        if friend_request.status != FriendRequestStatus.PENDING.value:
             raise ValueError(f"Friend request is already {friend_request.status}")
+
         
         # Accept the request
         await self.network_repo.friend_requests.accept_request(request_id, response_message)
@@ -143,9 +144,11 @@ class FriendManagementService:
         
         # Update status to cancelled
         updated_request = await self.network_repo.friend_requests.update(request_id, {
-            "status": FriendRequestStatus.CANCELLED,
+            "status": FriendRequestStatus.CANCELLED.value,
             "responded_at": datetime.utcnow()
         })
+
+
         
         print(f"🚫 Friend request cancelled: {friend_request.from_user_id} -> {friend_request.to_user_id}")
         
@@ -190,14 +193,14 @@ class FriendManagementService:
                 "user_id": blocking_user_id,
                 "friend_user_id": blocked_user_id,
                 "relationship_type": "blocked",
-                "status": RelationshipStatus.BLOCKED,
+                "status": RelationshipStatus.BLOCKED.value,
                 "privacy_settings": self._get_blocked_privacy_settings()
             }
             await self.network_repo.relationships.create(block_data)
         else:
             # Update existing relationship to blocked
             await self.network_repo.relationships.update(relationship.id, {
-                "status": RelationshipStatus.BLOCKED,
+                "status": RelationshipStatus.BLOCKED.value,
                 "privacy_settings": self._get_blocked_privacy_settings()
             })
         
@@ -213,7 +216,7 @@ class FriendManagementService:
         """Unblock a user"""
         
         relationship = await self.network_repo.relationships.get_relationship(unblocking_user_id, unblocked_user_id)
-        if not relationship or relationship.status != RelationshipStatus.BLOCKED:
+        if not relationship or relationship.status != RelationshipStatus.BLOCKED.value:
             raise ValueError("User is not blocked")
         
         # Remove the blocked relationship
@@ -395,3 +398,92 @@ class FriendManagementService:
         suggestions.sort(key=lambda x: x["mutual_friends_count"], reverse=True)
         
         return suggestions[:limit]
+    
+    async def update_relationship_privacy_settings(
+        self,
+        user_id: int,
+        friend_user_id: int,
+        privacy_settings: Dict[str, Any]
+    ) -> bool:
+        """Update privacy settings for a specific relationship"""
+        
+        # Only update the user's own privacy settings for this relationship
+        # (not the mutual relationship)
+        success = await self.network_repo.relationships.update_privacy_settings(
+            user_id=user_id,
+            friend_user_id=friend_user_id,
+            privacy_settings=privacy_settings
+        )
+        
+        if success:
+            print(f"🔒 Privacy settings updated for relationship: user {user_id} -> user {friend_user_id}")
+        
+        return success
+    
+    async def get_relationship_status(
+        self,
+        user_id: int,
+        other_user_id: int
+    ) -> Dict[str, Any]:
+        """Get comprehensive relationship status between two users"""
+        
+        # Check for existing relationship
+        relationship = await self.network_repo.relationships.get_mutual_relationship(user_id, other_user_id)
+        
+        # Check for pending friend requests
+        sent_request = await self.network_repo.friend_requests.get_existing_request(user_id, other_user_id)
+        received_request = await self.network_repo.friend_requests.get_existing_request(other_user_id, user_id)
+        
+        return {
+            "is_friend": relationship is not None and relationship.status == RelationshipStatus.ACTIVE,
+            "is_blocked": relationship is not None and relationship.status == RelationshipStatus.BLOCKED,
+            "relationship_type": relationship.relationship_type if relationship else None,
+            "trust_level": float(relationship.trust_level) if relationship else None,
+            "has_sent_request": sent_request is not None,
+            "has_received_request": received_request is not None,
+            "can_send_request": (
+                relationship is None and 
+                sent_request is None and 
+                received_request is None
+            ),
+            "relationship_id": relationship.id if relationship else None
+        }
+    
+    async def get_user_relationship_stats(self, user_id: int) -> Dict[str, Any]:
+        """Get comprehensive relationship statistics for a user"""
+        
+        # Get all relationships
+        all_relationships = await self.network_repo.relationships.get_user_friends(user_id, status="active")
+        
+        # Get pending requests
+        pending_sent = await self.network_repo.friend_requests.get_sent_requests_by_user(user_id)
+        pending_received = await self.network_repo.friend_requests.get_pending_requests_for_user(user_id)
+        
+        # Categorize relationships by type
+        relationship_types = {}
+        for rel in all_relationships:
+            rel_type = rel.relationship_type
+            if rel_type not in relationship_types:
+                relationship_types[rel_type] = 0
+            relationship_types[rel_type] += 1
+        
+        # Calculate average trust level
+        total_trust = sum(float(rel.trust_level) for rel in all_relationships)
+        avg_trust = total_trust / len(all_relationships) if all_relationships else 0.0
+        
+        return {
+            "total_friends": len(all_relationships),
+            "pending_sent_requests": len(pending_sent),
+            "pending_received_requests": len(pending_received),
+            "relationship_types": relationship_types,
+            "average_trust_level": avg_trust,
+            "most_trusted_friends": [
+                {
+                    "user_id": rel.friend_user_id,
+                    "username": rel.friend.username,
+                    "trust_level": float(rel.trust_level),
+                    "relationship_type": rel.relationship_type
+                }
+                for rel in sorted(all_relationships, key=lambda x: x.trust_level, reverse=True)[:5]
+            ]
+        }

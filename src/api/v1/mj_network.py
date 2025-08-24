@@ -1,6 +1,7 @@
-# src/api/v1/mj_network.py
+# src/api/v1/mj_network.py - FIXED VERSION
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, and_, or_  # ← FIXED: Added missing SQLAlchemy imports
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, Field
 from datetime import datetime
@@ -8,11 +9,13 @@ from datetime import datetime
 from ...config.database import get_db_session
 from ...core.dependencies import get_authenticated_user
 from ...models.database.user import User
-from ...database.repositories.mj_network import MJNetworkRepository
-from ...services.mj_network.mj_communication import MJCommunicationService
-from ...services.mj_network.discovery import MJDiscoveryService
-from ...services.mj_network.friend_management import FriendManagementService
+from ...database.repositories.mj_network import MJNetworkRepository  # ← FIXED: Updated import path
+from ...services.mj_network.mj_communication import MJCommunicationService  # ← FIXED: Updated import path
+from ...services.mj_network.friend_management import FriendManagementService  # ← FIXED: Updated import path
+from ...config.database import AsyncSessionLocal
 
+
+import math
 router = APIRouter()
 
 # =====================================================
@@ -49,7 +52,7 @@ class MJTalkRequest(BaseModel):
 class ScheduledCheckinCreate(BaseModel):
     target_user_id: int
     checkin_name: str
-    frequency_type: str = Field(..., regex="^(daily|weekly|monthly|custom)$")
+    frequency_type: str = Field(..., pattern="^(daily|weekly|monthly|custom)$")
     frequency_value: int = Field(1, ge=1)
     time_of_day: Optional[str] = None  # HH:MM format
     checkin_message: str = "How are you doing?"
@@ -109,6 +112,21 @@ class MessageResponse(BaseModel):
     created_at: datetime
     tokens_used: int
 
+
+def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    R = 6371.0
+    lat1, lon1, lat2, lon2 = map(math.radians, [lat1, lon1, lat2, lon2])
+    dlat = lat2 - lat1
+    dlon = lon2 - lon1
+    a = math.sin(dlat/2)**2 + math.cos(lat1)*math.cos(lat2)*math.sin(dlon/2)**2
+    return 2 * R * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+async def _queue_offline_message_safe(message_id: int, recipient_user_id: int):
+    # Create a brand-new session for the background work
+    async with AsyncSessionLocal() as session:
+        svc = MJCommunicationService(session)
+        await svc.queue_offline_message(message_id, recipient_user_id)
+
 # =====================================================
 # 1. MJ REGISTRY & STATUS ENDPOINTS
 # =====================================================
@@ -139,8 +157,19 @@ async def initialize_mj_registry(
     
     return {
         "message": "MJ registry initialized successfully",
-        "mj_registry": mj_registry
+        "mj_registry": {
+            "id": mj_registry.id,
+            "user_id": mj_registry.user_id,
+            "mj_instance_id": mj_registry.mj_instance_id,
+            "status": mj_registry.status,
+            "last_seen": mj_registry.last_seen,
+            "location_enabled": mj_registry.location_enabled,
+            "total_conversations": mj_registry.total_conversations,
+            "total_messages_sent": mj_registry.total_messages_sent,
+            "total_messages_received": mj_registry.total_messages_received,
+        }
     }
+
 
 @router.get("/registry/status")
 async def get_mj_status(
@@ -152,14 +181,26 @@ async def get_mj_status(
     network_repo = MJNetworkRepository(db)
     network_data = await network_repo.get_complete_user_network_data(current_user.id)
     
+    mj = network_data["mj_registry"]
     return {
-        "mj_registry": network_data["mj_registry"],
+        "mj_registry": (None if not mj else {
+            "id": mj.id,
+            "user_id": mj.user_id,
+            "mj_instance_id": mj.mj_instance_id,
+            "status": mj.status,
+            "last_seen": mj.last_seen,
+            "location_enabled": mj.location_enabled,
+            "total_conversations": mj.total_conversations,
+            "total_messages_sent": mj.total_messages_sent,
+            "total_messages_received": mj.total_messages_received,
+        }),
         "friends_count": len(network_data["friends"]),
         "pending_requests": len(network_data["pending_friend_requests"]),
         "active_conversations": len(network_data["conversations"]),
         "pending_messages": len(network_data["pending_messages"]),
         "has_location": network_data["location"] is not None
     }
+
 
 @router.put("/registry/status/{new_status}")
 async def update_mj_status(
@@ -220,7 +261,8 @@ async def update_location(
     # Enable location in MJ registry
     mj_registry = await network_repo.mj_registry.get_by_user_id(current_user.id)
     if mj_registry and not mj_registry.location_enabled:
-        capabilities = mj_registry.capabilities.copy()
+        capabilities = (mj_registry.capabilities or {}).copy()
+
         capabilities["location"] = True
         
         await network_repo.mj_registry.update(mj_registry.id, {
@@ -244,8 +286,12 @@ async def discover_nearby_mjs(
     network_repo = MJNetworkRepository(db)
     
     # Get user's current location
-    user_location = await network_repo.locations.get_by_id(current_user.id)
-    if not user_location:
+    user_location = await db.execute(
+        select(network_repo.locations.model).where(network_repo.locations.model.user_id == current_user.id)
+    )
+    user_location_obj = user_location.scalar_one_or_none()
+    
+    if not user_location_obj:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Please enable location sharing first"
@@ -253,8 +299,8 @@ async def discover_nearby_mjs(
     
     # Get nearby locations
     nearby_locations = await network_repo.locations.get_nearby_locations(
-        latitude=float(user_location.latitude),
-        longitude=float(user_location.longitude),
+        latitude=float(user_location_obj.latitude),
+        longitude=float(user_location_obj.longitude),
         radius_km=radius_km,
         exclude_user_id=current_user.id
     )
@@ -262,13 +308,19 @@ async def discover_nearby_mjs(
     # Format response
     nearby_users = []
     for location in nearby_locations:
+        distance = _haversine_km(
+            float(user_location_obj.latitude), float(user_location_obj.longitude),
+            float(location.latitude), float(location.longitude)
+        )
         nearby_users.append(UserLocationResponse(
             user_id=location.user.id,
             username=location.user.username,
             mj_instance_id=location.user.mj_instance_id,
             latitude=float(location.latitude),
-            longitude=float(location.longitude)
+            longitude=float(location.longitude),
+            distance_km=round(distance, 2)
         ))
+
     
     return {
         "nearby_users": nearby_users,
@@ -355,9 +407,22 @@ async def get_pending_friend_requests(
     pending_requests = await network_repo.friend_requests.get_pending_requests_for_user(current_user.id)
     
     return {
-        "pending_requests": pending_requests,
+        "pending_requests": [
+            {
+                "id": fr.id,
+                "from_user_id": fr.from_user_id,
+                "from_username": fr.from_user.username if fr.from_user else None,
+                "to_user_id": fr.to_user_id,
+                "request_message": fr.request_message,
+                "status": fr.status,
+                "expires_at": fr.expires_at,
+                "created_at": fr.created_at,
+            }
+            for fr in pending_requests
+        ],
         "count": len(pending_requests)
     }
+
 
 @router.post("/friends/requests/respond")
 async def respond_to_friend_request(
@@ -485,10 +550,11 @@ async def initiate_mj_conversation(
         # Queue background task for message delivery if target is offline
         if not result["target_user_online"]:
             background_tasks.add_task(
-                communication_service.queue_offline_message,
+                _queue_offline_message_safe,
                 result["message"].id,
                 talk_request.target_user_id
             )
+
         
         return {
             "message": "MJ conversation initiated",
@@ -594,9 +660,22 @@ async def get_pending_messages(
     pending_messages = await network_repo.pending_messages.get_pending_for_user(current_user.id)
     
     return {
-        "pending_messages": pending_messages,
+        "pending_messages": [
+            {
+                "id": pm.id,
+                "message_id": pm.message_id,
+                "recipient_user_id": pm.recipient_user_id,
+                "status": pm.status,
+                "queued_at": pm.queued_at,
+                "delivered_at": pm.delivered_at,
+                "expires_at": pm.expires_at,
+                "last_error": pm.last_error,
+            }
+            for pm in pending_messages
+        ],
         "count": len(pending_messages)
     }
+
 
 @router.post("/messages/{message_id}/mark-read")
 async def mark_message_as_read(

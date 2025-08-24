@@ -1,5 +1,6 @@
-# src/models/database/user.py - Fixed version
+# src/models/database/user.py - Fixed version with MJ Network relationships
 from sqlalchemy import Column, Integer, String, DateTime, Boolean, Text, BigInteger, Enum
+from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from ...config.database import Base
 import enum
@@ -28,11 +29,37 @@ class User(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     
-    # TEMPORARILY REMOVED: Relationships that are causing the SQLAlchemy error
-    # We'll add these back once we create the other model files
+    # EXISTING RELATIONSHIPS (temporarily removed but should be added back)
     # conversations = relationship("Conversation", back_populates="user", cascade="all, delete-orphan")
     # memories = relationship("Memory", back_populates="user", cascade="all, delete-orphan")  
     # relationships = relationship("Relationship", back_populates="user", cascade="all, delete-orphan")
+    
+    # MJ NETWORK RELATIONSHIPS - ADD THESE BACK
+    mj_registry = relationship("MJRegistry", back_populates="user", uselist=False, cascade="all, delete-orphan")
+    location = relationship("UserLocation", back_populates="user", uselist=False, cascade="all, delete-orphan")
+
+    # Relationship Management
+    user_relationships = relationship("Relationship", foreign_keys="Relationship.user_id", back_populates="user", cascade="all, delete-orphan")
+    friend_relationships = relationship("Relationship", foreign_keys="Relationship.friend_user_id", back_populates="friend")
+
+    # Friend Requests
+    sent_friend_requests = relationship("FriendRequest", foreign_keys="FriendRequest.from_user_id", back_populates="from_user", cascade="all, delete-orphan")
+    received_friend_requests = relationship("FriendRequest", foreign_keys="FriendRequest.to_user_id", back_populates="to_user", cascade="all, delete-orphan")
+
+    # MJ Conversations
+    mj_conversations_as_a = relationship("MJConversation", foreign_keys="MJConversation.user_a_id", back_populates="user_a")
+    mj_conversations_as_b = relationship("MJConversation", foreign_keys="MJConversation.user_b_id", back_populates="user_b")
+
+    # MJ Messages
+    sent_mj_messages = relationship("MJMessage", foreign_keys="MJMessage.from_user_id", back_populates="from_user")
+    received_mj_messages = relationship("MJMessage", foreign_keys="MJMessage.to_user_id", back_populates="to_user")
+
+    # Pending Messages
+    pending_messages = relationship("PendingMessage", back_populates="recipient", cascade="all, delete-orphan")
+
+    # Scheduled Check-ins
+    scheduled_checkins = relationship("ScheduledCheckin", foreign_keys="ScheduledCheckin.user_id", back_populates="user", cascade="all, delete-orphan")
+    received_checkins = relationship("ScheduledCheckin", foreign_keys="ScheduledCheckin.target_user_id", back_populates="target_user")
     
     def __repr__(self):
         return f"<User(id={self.id}, username='{self.username}', email='{self.email}')>"

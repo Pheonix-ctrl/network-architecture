@@ -1,14 +1,14 @@
-# src/services/mj_network/mj_communication.py
+# src/services/mj_network/mj_communication.py - FIXED VERSION
 import json
 from typing import Dict, Any, List, Optional, Tuple
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime
 
-from ...database.repositories.mj_network import MJNetworkRepository
+from ...database.repositories.mj_network import MJNetworkRepository  # ← FIXED: Updated import path
 from ...database.repositories.memory import MemoryRepository
 from ...services.ai.openai_client import OpenAIClient
 from ...services.ai.personality.prompts import PersonalityPrompts
-from ...models.database.mj_network import MJStatus, DeliveryStatus, MessageType
+from ...models.database.mj_network import MJStatus, DeliveryStatus, MessageType  # ← FIXED: Updated import path
 
 class MJCommunicationService:
     """Core service for MJ-to-MJ communication"""
@@ -48,7 +48,7 @@ class MJCommunicationService:
         if not target_mj_registry:
             raise ValueError("Target user's MJ is not registered in the network")
         
-        target_user_online = target_mj_registry.status == MJStatus.ONLINE
+        target_user_online = target_mj_registry.status == MJStatus.ONLINE.value
         can_respond_when_offline = await self.network_repo.relationships.can_mj_respond_when_offline(
             to_user_id, from_user_id
         )
@@ -72,7 +72,8 @@ class MJCommunicationService:
             from_user_id=from_user_id,
             to_user_id=to_user_id,
             message_purpose=message_purpose,
-            privacy_settings=relationship.privacy_settings,
+            privacy_settings=relationship.privacy_settings or {},
+
             relationship_type=relationship.relationship_type
         )
         
@@ -82,7 +83,7 @@ class MJCommunicationService:
             from_user_id=from_user_id,
             to_user_id=to_user_id,
             message_content=mj_response_data["response_content"],
-            message_type=MessageType.TEXT,
+            message_type=MessageType.TEXT.value,
             openai_prompt_used=mj_response_data["prompt_used"],
             openai_response_raw=mj_response_data["raw_response"],
             privacy_settings_applied=mj_response_data["privacy_settings_applied"],
@@ -401,8 +402,90 @@ Respond as MJ representing your user, while respecting their privacy settings.
             from_user_id=checker_user_id,
             to_user_id=target_user_id,
             message_purpose=f"Scheduled check-in: {checkin_message}",
-            privacy_settings=relationship.privacy_settings,
+            privacy_settings=relationship.privacy_settings or {},
+
             relationship_type=relationship.relationship_type
         )
         
         return response_data
+    
+    async def create_scheduled_checkin_conversation(
+        self,
+        checker_user_id: int,
+        target_user_id: int,
+        checkin_data: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Execute a scheduled check-in by creating a conversation and message
+        
+        This is called by the scheduled check-in system
+        """
+        
+        try:
+            # Generate the check-in response
+            response_data = await self.generate_mj_checkin_response(
+                checker_user_id=checker_user_id,
+                target_user_id=target_user_id,
+                checkin_message=checkin_data.get("checkin_message", "How are you doing?"),
+                checkin_type=checkin_data.get("checkin_type", "general")
+            )
+            
+            # Get or create conversation
+            conversation = await self.network_repo.conversations.get_conversation_between_users(
+                checker_user_id, target_user_id
+            )
+            if not conversation:
+                relationship = await self.network_repo.relationships.get_mutual_relationship(
+                    checker_user_id, target_user_id
+                )
+                conversation = await self.network_repo.conversations.create_conversation(
+                    user_a_id=checker_user_id,
+                    user_b_id=target_user_id,
+                    initiated_by_user_id=checker_user_id,
+                    conversation_topic=f"Scheduled check-in: {checkin_data.get('checkin_name', 'General')}",
+                    relationship_id=relationship.id if relationship else None
+                )
+            
+            # Create the check-in message
+            message = await self.network_repo.messages.create_mj_message(
+                conversation_id=conversation.id,
+                from_user_id=checker_user_id,
+                to_user_id=target_user_id,
+                message_content=response_data["response_content"],
+                message_type=MessageType.CHECK_IN.value,
+                openai_prompt_used=response_data["prompt_used"],
+                openai_response_raw=response_data["raw_response"],
+                privacy_settings_applied=response_data["privacy_settings_applied"],
+                user_memories_used=response_data["memories_used"],
+                tokens_used=response_data["tokens_used"]
+            )
+            
+            # Check if target user is online
+            target_mj_registry = await self.network_repo.mj_registry.get_by_user_id(target_user_id)
+            target_user_online = target_mj_registry and target_mj_registry.status == MJStatus.ONLINE
+            
+            if target_user_online:
+                await self.network_repo.messages.mark_as_delivered(message.id)
+                await self.network_repo.mj_registry.increment_stats(target_user_id, messages_received=1)
+            else:
+                # Queue for offline delivery
+                await self.queue_offline_message(message.id, target_user_id)
+            
+            # Update sender stats
+            await self.network_repo.mj_registry.increment_stats(checker_user_id, messages_sent=1)
+            
+            return {
+                "success": True,
+                "conversation_id": conversation.id,
+                "message_id": message.id,
+                "target_user_online": target_user_online,
+                "response_content": response_data["response_content"],
+                "tokens_used": response_data["tokens_used"]
+            }
+            
+        except Exception as e:
+            print(f"❌ Failed to execute scheduled check-in: {e}")
+            return {
+                "success": False,
+                "error": str(e)
+            }

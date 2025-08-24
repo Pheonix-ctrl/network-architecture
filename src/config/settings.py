@@ -53,8 +53,8 @@ class Settings(BaseSettings):
     
     # Mode System Configuration
     DEFAULT_MODE: str = Field(default="mj", env="DEFAULT_MODE")
-    MODE_SWITCH_COOLDOWN: int = Field(default=300, env="MODE_SWITCH_COOLDOWN")  # 5 minutes
-    KALKI_MODE_TIMEOUT: int = Field(default=1800, env="KALKI_MODE_TIMEOUT")  # 30 minutes
+    MODE_SWITCH_COOLDOWN: int = Field(default=300, env="MODE_SWITCH_COOLDOWN")
+    KALKI_MODE_TIMEOUT: int = Field(default=1800, env="KALKI_MODE_TIMEOUT")
     
     # Rate Limiting
     RATE_LIMIT_REQUESTS: int = Field(default=100, env="RATE_LIMIT_REQUESTS")
@@ -76,7 +76,7 @@ class Settings(BaseSettings):
         env_file = ".env"
         env_file_encoding = "utf-8"
         case_sensitive = True
-        extra = "allow"  # ← THIS IS THE KEY FIX! Allows extra env variables
+        extra = "allow"
     
     @property
     def is_development(self) -> bool:

@@ -1,10 +1,14 @@
-# src/models/database/mj_network.py
-from sqlalchemy import Column, Integer, String, DateTime, Text, Boolean, ForeignKey, ARRAY, JSON, DECIMAL, TIME, CheckConstraint
+# src/models/database/mj_network.py - FIXED VERSION (APPLY THIS WHOLE FILE)
+from sqlalchemy import (
+    Column, Integer, String, DateTime, Text, Boolean, ForeignKey, ARRAY, JSON,
+    DECIMAL, TIME, CheckConstraint, select, and_, or_, UniqueConstraint
+)
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from sqlalchemy.dialects.postgresql import BIGINT
 from ...config.database import Base
 import enum
+from datetime import datetime, timedelta
 
 # =====================================================
 # 1. MJ REGISTRY MODEL
@@ -19,15 +23,17 @@ class MJStatus(str, enum.Enum):
 class MJRegistry(Base):
     __tablename__ = "mj_registry"
     
-    id = Column(BIGINT, primary_key=True, index=True)
-    user_id = Column(BIGINT, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True)
+    id = Column(BIGINT, primary_key=True)  # PKs are indexed implicitly
+    user_id = Column(BIGINT, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
     mj_instance_id = Column(String(100), nullable=False, unique=True, index=True)
-    status = Column(String(20), default=MJStatus.OFFLINE)
+    # CHANGED: use enum .value to ensure a clean string default
+    status = Column(String(20), default=MJStatus.OFFLINE.value)
     last_seen = Column(DateTime(timezone=True), server_default=func.now(), index=True)
     
     # Device & Technical Info
-    device_info = Column(JSON, default={})
-    capabilities = Column(JSON, default={"chat": True, "location": False, "voice": False})
+    # CHANGED: avoid mutable default objects; use callables
+    device_info = Column(JSON, default=dict)
+    capabilities = Column(JSON, default=lambda: {"chat": True, "location": False, "voice": False})
     version = Column(String(50), default="1.0.0")
     
     # Location Data (Optional)
@@ -51,11 +57,12 @@ class MJRegistry(Base):
     
     # Table constraints
     __table_args__ = (
-        CheckConstraint(status.in_(['online', 'offline', 'away', 'busy']), name='check_mj_status'),
+        # CHANGED: string-based CheckConstraint for portability
+        CheckConstraint("status IN ('online','offline','away','busy')", name='check_mj_status'),
     )
 
 # =====================================================
-# 2. RELATIONSHIPS MODEL
+# 2. RELATIONSHIPS MODEL - FIXED TABLE NAME
 # =====================================================
 
 class RelationshipStatus(str, enum.Enum):
@@ -64,9 +71,9 @@ class RelationshipStatus(str, enum.Enum):
     MUTED = "muted"
 
 class Relationship(Base):
-    __tablename__ = "relationships"
+    __tablename__ = "relationships_network"  # ← FIXED: table name
     
-    id = Column(BIGINT, primary_key=True, index=True)
+    id = Column(BIGINT, primary_key=True)
     user_id = Column(BIGINT, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     friend_user_id = Column(BIGINT, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     
@@ -75,7 +82,8 @@ class Relationship(Base):
     custom_relationship_name = Column(String(100), nullable=True)
     
     # Privacy & Sharing Settings
-    privacy_settings = Column(JSON, default={
+    # CHANGED: avoid mutable defaults
+    privacy_settings = Column(JSON, default=lambda: {
         "share_mood": True,
         "share_activity": True,
         "share_health": False,
@@ -84,13 +92,12 @@ class Relationship(Base):
         "share_location": False,
         "custom_categories": {}
     })
-    
-    # Restrictions
-    restricted_topics = Column(ARRAY(Text), default=[])
+    restricted_topics = Column(ARRAY(Text), default=list)
     can_respond_when_offline = Column(Boolean, default=True)
     
     # Status
-    status = Column(String(20), default=RelationshipStatus.ACTIVE, index=True)
+    # CHANGED: enum .value
+    status = Column(String(20), default=RelationshipStatus.ACTIVE.value, index=True)
     trust_level = Column(DECIMAL(3, 2), default=0.50)
     
     # Interaction History
@@ -104,10 +111,20 @@ class Relationship(Base):
     # Relationships
     user = relationship("User", foreign_keys=[user_id], back_populates="user_relationships")
     friend = relationship("User", foreign_keys=[friend_user_id], back_populates="friend_relationships")
+
+    # MUST-FIX (to resolve your runtime error):
+    # Add the inverse side that MJConversation.back_populates points to.
+    mj_conversations = relationship(
+        "MJConversation",
+        back_populates="network_relationship",
+        cascade="all, delete-orphan"
+    )
     
     # Table constraints
     __table_args__ = (
-        CheckConstraint(status.in_(['active', 'blocked', 'muted']), name='check_relationship_status'),
+        # CHANGED: string-based checks; added unique pair constraint to avoid duplicates
+        UniqueConstraint('user_id', 'friend_user_id', name='uq_relationship_pair'),
+        CheckConstraint("status IN ('active','blocked','muted')", name='check_relationship_status'),
         CheckConstraint('trust_level >= 0 AND trust_level <= 1', name='check_trust_level'),
         CheckConstraint('user_id != friend_user_id', name='check_no_self_relationship'),
     )
@@ -133,18 +150,19 @@ class DiscoveryMethod(str, enum.Enum):
 class FriendRequest(Base):
     __tablename__ = "friend_requests"
     
-    id = Column(BIGINT, primary_key=True, index=True)
+    id = Column(BIGINT, primary_key=True)
     from_user_id = Column(BIGINT, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     to_user_id = Column(BIGINT, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     
     # Request Details
     request_message = Column(Text, nullable=True)
     suggested_relationship_type = Column(String(50), default="friend")
-    discovery_method = Column(String(30), default=DiscoveryMethod.MANUAL)
+    # CHANGED: enum .value
+    discovery_method = Column(String(30), default=DiscoveryMethod.MANUAL.value)
     
     # Status & Timing
-    status = Column(String(20), default=FriendRequestStatus.PENDING, index=True)
-    expires_at = Column(DateTime(timezone=True), default=func.now() + func.make_interval(days=30))
+    status = Column(String(20), default=FriendRequestStatus.PENDING.value, index=True)
+    expires_at = Column(DateTime(timezone=True), default=lambda: datetime.utcnow() + timedelta(days=30))
     
     # Response
     response_message = Column(Text, nullable=True)
@@ -160,8 +178,10 @@ class FriendRequest(Base):
     
     # Table constraints
     __table_args__ = (
-        CheckConstraint(status.in_(['pending', 'accepted', 'rejected', 'expired', 'cancelled']), name='check_request_status'),
-        CheckConstraint(discovery_method.in_(['manual', 'phone_sync', 'nearby', 'map', 'search']), name='check_discovery_method'),
+        # CHANGED: string-based checks; optional uniqueness to avoid multiple simultaneous pending requests
+        UniqueConstraint('from_user_id', 'to_user_id', 'status', name='uq_friend_request_state'),
+        CheckConstraint("status IN ('pending','accepted','rejected','expired','cancelled')", name='check_request_status'),
+        CheckConstraint("discovery_method IN ('manual','phone_sync','nearby','map','search')", name='check_discovery_method'),
         CheckConstraint('from_user_id != to_user_id', name='check_no_self_request'),
     )
 
@@ -182,7 +202,7 @@ class PrivacyLevel(str, enum.Enum):
 class MJConversation(Base):
     __tablename__ = "mj_conversations"
     
-    id = Column(BIGINT, primary_key=True, index=True)
+    id = Column(BIGINT, primary_key=True)
     
     # Participants (both users involved)
     user_a_id = Column(BIGINT, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
@@ -193,13 +213,13 @@ class MJConversation(Base):
     conversation_topic = Column(String(200), nullable=True)
     
     # Status & Activity
-    status = Column(String(20), default=ConversationStatus.ACTIVE, index=True)
+    status = Column(String(20), default=ConversationStatus.ACTIVE.value, index=True)
     last_message_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
     message_count = Column(Integer, default=0)
     
     # Privacy Context
-    relationship_id = Column(BIGINT, ForeignKey("relationships.id"), nullable=True)
-    privacy_level = Column(String(20), default=PrivacyLevel.NORMAL)
+    relationship_id = Column(BIGINT, ForeignKey("relationships_network.id"), nullable=True)  # ← matches Relationship table
+    privacy_level = Column(String(20), default=PrivacyLevel.NORMAL.value)
     
     # Timestamps
     started_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -210,13 +230,14 @@ class MJConversation(Base):
     user_a = relationship("User", foreign_keys=[user_a_id], back_populates="mj_conversations_as_a")
     user_b = relationship("User", foreign_keys=[user_b_id], back_populates="mj_conversations_as_b")
     initiator = relationship("User", foreign_keys=[initiated_by_user_id])
-    relationship = relationship("Relationship", back_populates="mj_conversations")
+    # MUST MATCH the Relationship side name we added above
+    network_relationship = relationship("Relationship", back_populates="mj_conversations")
     messages = relationship("MJMessage", back_populates="conversation", cascade="all, delete-orphan")
     
     # Table constraints
     __table_args__ = (
-        CheckConstraint(status.in_(['active', 'archived', 'blocked']), name='check_conversation_status'),
-        CheckConstraint(privacy_level.in_(['minimal', 'normal', 'detailed']), name='check_privacy_level'),
+        CheckConstraint("status IN ('active','archived','blocked')", name='check_conversation_status'),
+        CheckConstraint("privacy_level IN ('minimal','normal','detailed')", name='check_privacy_level'),
         CheckConstraint('user_a_id != user_b_id', name='check_different_users'),
     )
 
@@ -240,7 +261,7 @@ class DeliveryStatus(str, enum.Enum):
 class MJMessage(Base):
     __tablename__ = "mj_messages"
     
-    id = Column(BIGINT, primary_key=True, index=True)
+    id = Column(BIGINT, primary_key=True)
     conversation_id = Column(BIGINT, ForeignKey("mj_conversations.id", ondelete="CASCADE"), nullable=False, index=True)
     
     # Message Origin
@@ -249,7 +270,7 @@ class MJMessage(Base):
     
     # Message Content
     message_content = Column(Text, nullable=False)
-    message_type = Column(String(30), default=MessageType.TEXT)
+    message_type = Column(String(30), default=MessageType.TEXT.value)
     
     # AI Processing Info
     openai_prompt_used = Column(Text, nullable=True)
@@ -262,7 +283,7 @@ class MJMessage(Base):
     response_time_ms = Column(Integer, nullable=True)
     
     # Delivery Status
-    delivery_status = Column(String(20), default=DeliveryStatus.PENDING, index=True)
+    delivery_status = Column(String(20), default=DeliveryStatus.PENDING.value, index=True)
     delivered_at = Column(DateTime(timezone=True), nullable=True)
     read_at = Column(DateTime(timezone=True), nullable=True)
     
@@ -273,11 +294,18 @@ class MJMessage(Base):
     conversation = relationship("MJConversation", back_populates="messages")
     from_user = relationship("User", foreign_keys=[from_user_id], back_populates="sent_mj_messages")
     to_user = relationship("User", foreign_keys=[to_user_id], back_populates="received_mj_messages")
+
+    # MUST-FIX: add the inverse of PendingMessage.message back_populates
+    pending_delivery = relationship(
+        "PendingMessage",
+        back_populates="message",
+        uselist=False
+    )
     
     # Table constraints
     __table_args__ = (
-        CheckConstraint(message_type.in_(['text', 'status_update', 'check_in', 'question', 'response']), name='check_message_type'),
-        CheckConstraint(delivery_status.in_(['pending', 'delivered', 'read', 'failed']), name='check_delivery_status'),
+        CheckConstraint("message_type IN ('text','status_update','check_in','question','response')", name='check_message_type'),
+        CheckConstraint("delivery_status IN ('pending','delivered','read','failed')", name='check_delivery_status'),
         CheckConstraint('from_user_id != to_user_id', name='check_different_message_users'),
     )
 
@@ -294,19 +322,19 @@ class PendingMessageStatus(str, enum.Enum):
 class PendingMessage(Base):
     __tablename__ = "pending_messages"
     
-    id = Column(BIGINT, primary_key=True, index=True)
+    id = Column(BIGINT, primary_key=True)
     message_id = Column(BIGINT, ForeignKey("mj_messages.id", ondelete="CASCADE"), nullable=False)
     recipient_user_id = Column(BIGINT, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     
     # Queue Status
-    status = Column(String(20), default=PendingMessageStatus.QUEUED, index=True)
+    status = Column(String(20), default=PendingMessageStatus.QUEUED.value, index=True)
     attempts = Column(Integer, default=0)
     max_attempts = Column(Integer, default=5)
     
     # Timing
     queued_at = Column(DateTime(timezone=True), server_default=func.now())
     delivered_at = Column(DateTime(timezone=True), nullable=True)
-    expires_at = Column(DateTime(timezone=True), default=func.now() + func.make_interval(days=7))
+    expires_at = Column(DateTime(timezone=True), default=lambda: datetime.utcnow() + timedelta(days=7))
     next_attempt_at = Column(DateTime(timezone=True), server_default=func.now())
     
     # Error Handling
@@ -318,7 +346,7 @@ class PendingMessage(Base):
     
     # Table constraints
     __table_args__ = (
-        CheckConstraint(status.in_(['queued', 'delivered', 'failed', 'expired']), name='check_pending_status'),
+        CheckConstraint("status IN ('queued','delivered','failed','expired')", name='check_pending_status'),
     )
 
 # =====================================================
@@ -341,7 +369,7 @@ class CheckinType(str, enum.Enum):
 class ScheduledCheckin(Base):
     __tablename__ = "scheduled_checkins"
     
-    id = Column(BIGINT, primary_key=True, index=True)
+    id = Column(BIGINT, primary_key=True)
     
     # Participants
     user_id = Column(BIGINT, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
@@ -349,14 +377,14 @@ class ScheduledCheckin(Base):
     
     # Schedule Configuration
     checkin_name = Column(String(100), nullable=False)
-    frequency_type = Column(String(20), nullable=False)
+    frequency_type = Column(String(20), nullable=False)  # set with FrequencyType.*.value in code paths
     frequency_value = Column(Integer, default=1)
     time_of_day = Column(TIME, nullable=True)
     timezone = Column(String(50), default="UTC")
     
     # Check-in Content
     checkin_message = Column(String(500), default="How are you doing?")
-    checkin_type = Column(String(30), default=CheckinType.GENERAL)
+    checkin_type = Column(String(30), default=CheckinType.GENERAL.value)
     
     # Status & Execution
     is_active = Column(Boolean, default=True, index=True)
@@ -374,8 +402,8 @@ class ScheduledCheckin(Base):
     
     # Table constraints
     __table_args__ = (
-        CheckConstraint(frequency_type.in_(['daily', 'weekly', 'monthly', 'custom']), name='check_frequency_type'),
-        CheckConstraint(checkin_type.in_(['general', 'mood', 'health', 'work', 'custom']), name='check_checkin_type'),
+        CheckConstraint("frequency_type IN ('daily','weekly','monthly','custom')", name='check_frequency_type'),
+        CheckConstraint("checkin_type IN ('general','mood','health','work','custom')", name='check_checkin_type'),
         CheckConstraint('user_id != target_user_id', name='check_no_self_checkin'),
     )
 
@@ -391,7 +419,7 @@ class LocationSource(str, enum.Enum):
 class UserLocation(Base):
     __tablename__ = "user_locations"
     
-    id = Column(BIGINT, primary_key=True, index=True)
+    id = Column(BIGINT, primary_key=True)
     user_id = Column(BIGINT, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
     
     # Location Data
@@ -400,7 +428,7 @@ class UserLocation(Base):
     accuracy_meters = Column(Integer, nullable=True)
     
     # Location Context
-    location_source = Column(String(30), default=LocationSource.GPS)
+    location_source = Column(String(30), default=LocationSource.GPS.value)
     is_current_location = Column(Boolean, default=True)
     
     # Privacy
@@ -409,24 +437,21 @@ class UserLocation(Base):
     
     # Timestamps
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    expires_at = Column(DateTime(timezone=True), default=func.now() + func.make_interval(hours=12), index=True)
+    expires_at = Column(DateTime(timezone=True), default=lambda: datetime.utcnow() + timedelta(hours=12), index=True)
     
     # Relationships
     user = relationship("User", back_populates="location")
     
     # Table constraints
     __table_args__ = (
-        CheckConstraint(location_source.in_(['gps', 'network', 'manual']), name='check_location_source'),
+        CheckConstraint("location_source IN ('gps','network','manual')", name='check_location_source'),
     )
 
 # =====================================================
-# UPDATE EXISTING USER MODEL TO ADD RELATIONSHIPS
+# MISSING BACK RELATIONSHIPS FOR EXISTING MODELS
 # =====================================================
-
-# NOTE: Add these relationships to your existing User model in src/models/database/user.py
-
 """
-Add these relationships to your existing User class:
+Add these relationships to your existing User class (src/models/database/user.py):
 
 # MJ Network Relationships
 mj_registry = relationship("MJRegistry", back_populates="user", uselist=False, cascade="all, delete-orphan")
@@ -455,15 +480,3 @@ pending_messages = relationship("PendingMessage", back_populates="recipient", ca
 scheduled_checkins = relationship("ScheduledCheckin", foreign_keys="ScheduledCheckin.user_id", back_populates="user", cascade="all, delete-orphan")
 received_checkins = relationship("ScheduledCheckin", foreign_keys="ScheduledCheckin.target_user_id", back_populates="target_user")
 """
-
-# =====================================================
-# ADD MISSING BACK RELATIONSHIPS
-# =====================================================
-
-# Add these to existing models:
-
-# In Relationship model:
-# mj_conversations = relationship("MJConversation", back_populates="relationship")
-
-# In MJMessage model:
-# pending_delivery = relationship("PendingMessage", back_populates="message", uselist=False)
