@@ -9,8 +9,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import asyncpg
 import bcrypt
+import jwt
 from datetime import datetime
 import json
+import src.models.database
+
 # If you will enforce SSL for asyncpg (Supabase), uncomment:
 # import ssl
 
@@ -41,8 +44,8 @@ class ChatMessage(BaseModel):
 
 
 # Database connection - FIXED URLs
-SQLALCHEMY_DATABASE_URL = "postgresql+asyncpg:/jhfpphk.supabase.co:5432/postgres"
-ASYNCPG_DATABASE_URL = "postgresql://postgres:tijzjctexijhfpphk.supabase.co:5432/postgres"
+SQLALCHEMY_DATABASE_URL = "postgresql+asyncpg://posjzjctexijhfpphk.supabase.co:5432/postgres"
+ASYNCPG_DATABASE_URL = "postgresql://postgres:jhfpphk.supabase.co:5432/postgres"
 
 # For backwards compatibility
 DATABASE_URL = SQLALCHEMY_DATABASE_URL
@@ -104,6 +107,8 @@ app.add_middleware(
 # Security
 security = HTTPBearer(auto_error=False)
 
+# REPLACE THE get_current_user FUNCTION IN src/main.py WITH THIS:
+
 async def get_current_user(token = Depends(security)):
     if not token:
         print("❌ No token provided")
@@ -119,7 +124,7 @@ async def get_current_user(token = Depends(security)):
         print(f"✅ Token valid for user: {user_id}")
         return user_id
     except HTTPException:
-        raise
+        raise  # Re-raise HTTPException as-is
     except Exception as e:
         print(f"❌ Token verification error: {e}")
         raise HTTPException(status_code=401, detail="Authentication failed")

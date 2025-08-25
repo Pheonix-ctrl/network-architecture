@@ -22,19 +22,17 @@ class User(Base):
     email = Column(String(255), unique=True, index=True, nullable=False)
     password_hash = Column(String(255), nullable=False)
     mj_instance_id = Column(String(50), unique=True, index=True)
-    # Use the exact enum name from your database
     preferred_mode = Column(Enum(PersonalityMode, name="personality_mode"), default=PersonalityMode.mj)
     is_online = Column(Boolean, default=False)
     last_active = Column(DateTime(timezone=True), server_default=func.now())
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     
-    # EXISTING RELATIONSHIPS (temporarily removed but should be added back)
-    # conversations = relationship("Conversation", back_populates="user", cascade="all, delete-orphan")
-    # memories = relationship("Memory", back_populates="user", cascade="all, delete-orphan")  
-    # relationships = relationship("Relationship", back_populates="user", cascade="all, delete-orphan")
+    # EXISTING RELATIONSHIPS 
+    conversations = relationship("Conversation", back_populates="user", cascade="all, delete-orphan")
+    memories = relationship("Memory", back_populates="user", cascade="all, delete-orphan")  
     
-    # MJ NETWORK RELATIONSHIPS - ADD THESE BACK
+    # MJ NETWORK RELATIONSHIPS
     mj_registry = relationship("MJRegistry", back_populates="user", uselist=False, cascade="all, delete-orphan")
     location = relationship("UserLocation", back_populates="user", uselist=False, cascade="all, delete-orphan")
 
