@@ -162,7 +162,8 @@ class MJCommunicationService:
         user_context = "\n".join(context_parts) if context_parts else "No specific memories available."
         
         # Step 4: Build privacy-aware prompt
-        prompt = self._build_mj_to_mj_prompt(
+        # Step 4: Build privacy-aware prompt
+        prompt = PersonalityPrompts.build_mj_to_mj_prompt(
             message_purpose=message_purpose,
             user_context=user_context,
             privacy_settings=privacy_settings,
@@ -202,107 +203,9 @@ class MJCommunicationService:
             "tokens_used": tokens_used
         }
     
-    def _build_mj_to_mj_prompt(
-        self,
-        message_purpose: str,
-        user_context: str,
-        privacy_settings: Dict[str, Any],
-        relationship_type: str,
-        from_user_id: int,
-        to_user_id: int
-    ) -> str:
-        """
-        Build the specialized prompt for MJ-to-MJ communication
-        
-        This combines:
-        1. Base MJ personality
-        2. Privacy settings as instructions
-        3. User context
-        4. MJ-to-MJ specific instructions
-        """
-        
-        # Start with base MJ personality
-        base_prompt = PersonalityPrompts.BASE_INSTRUCTIONS
-        
-        # Add privacy instructions
-        privacy_instructions = self._build_privacy_instructions(privacy_settings, relationship_type)
-        
-        # Build the complete prompt
-        mj_to_mj_prompt = f"""
-{base_prompt}
 
----
-
-## MJ-TO-MJ COMMUNICATION MODE
-
-You are responding to another MJ who is asking about their user on behalf of their user.
-
-**Privacy Settings for this conversation:**
-{privacy_instructions}
-
-**User Context (about the person you're representing):**
-{user_context}
-
-**Relationship Type:** {relationship_type}
-
-**Communication Guidelines:**
-- Respond as MJ, but you're talking to another MJ about your user
-- Share what you're allowed to share based on the privacy settings above
-- Be conversational and caring - this is MJ talking to MJ
-- Ask about their user in return - MJs care about each other's humans
-- Keep the warm MJ personality but respect the privacy boundaries
-- Use "..." for pauses and natural MJ speech patterns
-- If something is restricted, don't share it, but do it naturally
-
-**Important:** Only share information that the privacy settings allow. If something is marked as "don't share" or isn't explicitly allowed, find a natural way to avoid sharing it without making it obvious you're filtering.
-
-The other MJ asked: "{message_purpose}"
-
-Respond as MJ representing your user, while respecting their privacy settings.
-"""
-        
-        return mj_to_mj_prompt
     
-    def _build_privacy_instructions(self, privacy_settings: Dict[str, Any], relationship_type: str) -> str:
-        """Convert privacy settings into natural language instructions for OpenAI"""
-        
-        instructions = []
-        
-        # Analyze each privacy setting
-        if privacy_settings.get("share_mood", False):
-            instructions.append("✅ Share general mood and emotional state")
-        else:
-            instructions.append("❌ Don't share mood or emotional details")
-        
-        if privacy_settings.get("share_activity", False):
-            instructions.append("✅ Share general activities and what they're up to")
-        else:
-            instructions.append("❌ Don't share specific activities or daily routine")
-        
-        if privacy_settings.get("share_health", False):
-            instructions.append("✅ Share health status and medical information")
-        else:
-            instructions.append("❌ Don't share health or medical information")
-        
-        if privacy_settings.get("share_life_events", False):
-            instructions.append("✅ Share important life events and milestones")
-        else:
-            instructions.append("❌ Don't share personal life events or milestones")
-        
-        if privacy_settings.get("share_work", False):
-            instructions.append("✅ Share work status and professional updates")
-        else:
-            instructions.append("❌ Don't share work or professional information")
-        
-        if privacy_settings.get("share_location", False):
-            instructions.append("✅ Share location and travel information")
-        else:
-            instructions.append("❌ Don't share location or travel details")
-        
-        # Add relationship context
-        instructions.append(f"\n**Relationship Context:** This conversation is with a {relationship_type}, so respond appropriately for that relationship level.")
-        
-        return "\n".join(instructions)
+
     
     async def queue_offline_message(self, message_id: int, recipient_user_id: int):
         """Queue message for offline delivery"""
