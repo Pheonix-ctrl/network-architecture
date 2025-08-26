@@ -1,4 +1,5 @@
-# src/models/database/user.py - Fixed version with MJ Network relationships
+# src/models/database/user.py - FIXED: Updated to use NetworkRelationship
+
 from sqlalchemy import Column, Integer, String, DateTime, Boolean, Text, BigInteger, Enum
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -28,17 +29,18 @@ class User(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     
-    # EXISTING RELATIONSHIPS 
+    # EXISTING RELATIONSHIPS (keep the simple Relationship for basic relationships)
     conversations = relationship("Conversation", back_populates="user", cascade="all, delete-orphan")
     memories = relationship("Memory", back_populates="user", cascade="all, delete-orphan")  
+    relationships = relationship("Relationship", back_populates="user", cascade="all, delete-orphan")  # Simple relationship
     
-    # MJ NETWORK RELATIONSHIPS
+    # MJ NETWORK RELATIONSHIPS - FIXED: Updated names to avoid conflicts
     mj_registry = relationship("MJRegistry", back_populates="user", uselist=False, cascade="all, delete-orphan")
     location = relationship("UserLocation", back_populates="user", uselist=False, cascade="all, delete-orphan")
 
-    # Relationship Management
-    user_relationships = relationship("Relationship", foreign_keys="Relationship.user_id", back_populates="user", cascade="all, delete-orphan")
-    friend_relationships = relationship("Relationship", foreign_keys="Relationship.friend_user_id", back_populates="friend")
+    # Network Relationship Management - FIXED: Use NetworkRelationship and new names
+    user_network_relationships = relationship("NetworkRelationship", foreign_keys="NetworkRelationship.user_id", back_populates="user", cascade="all, delete-orphan")
+    friend_network_relationships = relationship("NetworkRelationship", foreign_keys="NetworkRelationship.friend_user_id", back_populates="friend")
 
     # Friend Requests
     sent_friend_requests = relationship("FriendRequest", foreign_keys="FriendRequest.from_user_id", back_populates="from_user", cascade="all, delete-orphan")

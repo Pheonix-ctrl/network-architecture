@@ -8,7 +8,7 @@ import math
 
 from .base import BaseRepository
 from ...models.database.mj_network import (
-    MJRegistry, Relationship, FriendRequest, MJConversation, 
+    MJRegistry, NetworkRelationship, FriendRequest, MJConversation, 
     MJMessage, PendingMessage, ScheduledCheckin, UserLocation,
     MJStatus, RelationshipStatus, FriendRequestStatus, ConversationStatus,
     MessageType, DeliveryStatus, PendingMessageStatus
@@ -142,46 +142,46 @@ class MJRegistryRepository(BaseRepository[MJRegistry]):
 # 2. RELATIONSHIPS REPOSITORY - FIXED FOR relationships_network TABLE
 # =====================================================
 
-class RelationshipRepository(BaseRepository[Relationship]):
+class NetworkRelationshipRepository(BaseRepository[NetworkRelationship]):
     def __init__(self, db: AsyncSession):
-        super().__init__(db, Relationship)
+        super().__init__(db, NetworkRelationship)
     
-    async def get_relationship(self, user_id: int, friend_user_id: int) -> Optional[Relationship]:
+    async def get_relationship(self, user_id: int, friend_user_id: int) -> Optional[NetworkRelationship]:
         """Get relationship between two users"""
         result = await self.db.execute(
-            select(Relationship).where(
+            select(NetworkRelationship).where(
                 and_(
-                    Relationship.user_id == user_id,
-                    Relationship.friend_user_id == friend_user_id
+                    NetworkRelationship.user_id == user_id,
+                    NetworkRelationship.friend_user_id == friend_user_id
                 )
             )
         )
         return result.scalar_one_or_none()
     
-    async def get_mutual_relationship(self, user_a_id: int, user_b_id: int) -> Optional[Relationship]:
+    async def get_mutual_relationship(self, user_a_id: int, user_b_id: int) -> Optional[NetworkRelationship]:
         """Get relationship from either direction"""
         result = await self.db.execute(
-            select(Relationship).where(
+            select(NetworkRelationship).where(
                 or_(
-                    and_(Relationship.user_id == user_a_id, Relationship.friend_user_id == user_b_id),
-                    and_(Relationship.user_id == user_b_id, Relationship.friend_user_id == user_a_id)
+                    and_(NetworkRelationship.user_id == user_a_id, NetworkRelationship.friend_user_id == user_b_id),
+                    and_(NetworkRelationship.user_id == user_b_id, NetworkRelationship.friend_user_id == user_a_id)
                 )
             )
         )
         return result.scalar_one_or_none()
     
-    async def get_user_friends(self, user_id: int, status: str = "active") -> List[Relationship]:
+    async def get_user_friends(self, user_id: int, status: str = "active") -> List[NetworkRelationship]:
         """Get all friends for a user"""
         result = await self.db.execute(
-            select(Relationship)
+            select(NetworkRelationship)
             .where(
                 and_(
-                    Relationship.user_id == user_id,
-                    Relationship.status == status
+                    NetworkRelationship.user_id == user_id,
+                    NetworkRelationship.status == status
                 )
             )
-            .options(selectinload(Relationship.friend))
-            .order_by(desc(Relationship.last_interaction))
+            .options(selectinload(NetworkRelationship.friend))
+            .order_by(desc(NetworkRelationship.last_interaction))
         )
         return result.scalars().all()
     
@@ -191,11 +191,11 @@ class RelationshipRepository(BaseRepository[Relationship]):
         user_b_id: int, 
         relationship_type: str,
         privacy_settings: Dict[str, Any]
-    ) -> Tuple[Relationship, Relationship]:
+    ) -> Tuple[NetworkRelationship, NetworkRelationship]:
         """Create mutual relationship between two users"""
         
         # Create relationship from A to B
-        rel_a_to_b = Relationship(
+        rel_a_to_b = NetworkRelationship(
             user_id=user_a_id,
             friend_user_id=user_b_id,
             relationship_type=relationship_type,
@@ -203,7 +203,7 @@ class RelationshipRepository(BaseRepository[Relationship]):
         )
         
         # Create relationship from B to A
-        rel_b_to_a = Relationship(
+        rel_b_to_a = NetworkRelationship(
             user_id=user_b_id,
             friend_user_id=user_a_id,
             relationship_type=relationship_type,
@@ -221,11 +221,11 @@ class RelationshipRepository(BaseRepository[Relationship]):
     async def update_privacy_settings(self, user_id: int, friend_user_id: int, privacy_settings: Dict[str, Any]) -> bool:
         """Update privacy settings for a relationship"""
         result = await self.db.execute(
-            update(Relationship)
+            update(NetworkRelationship)
             .where(
                 and_(
-                    Relationship.user_id == user_id,
-                    Relationship.friend_user_id == friend_user_id
+                    NetworkRelationship.user_id == user_id,
+                    NetworkRelationship.friend_user_id == friend_user_id
                 )
             )
             .values(privacy_settings=privacy_settings, updated_at=func.now())
@@ -236,19 +236,17 @@ class RelationshipRepository(BaseRepository[Relationship]):
     async def can_mj_respond_when_offline(self, user_id: int, requesting_user_id: int) -> bool:
         """Check if user allows MJ to respond when they're offline"""
         result = await self.db.execute(
-            select(Relationship.can_respond_when_offline)
+            select(NetworkRelationship.can_respond_when_offline)
             .where(
                 and_(
-                    Relationship.user_id == user_id,
-                    Relationship.friend_user_id == requesting_user_id,
-                    Relationship.status == RelationshipStatus.ACTIVE.value
-
+                    NetworkRelationship.user_id == user_id,
+                    NetworkRelationship.friend_user_id == requesting_user_id,
+                    NetworkRelationship.status == RelationshipStatus.ACTIVE.value
                 )
             )
         )
         setting = result.scalar_one_or_none()
         return setting if setting is not None else False
-
 # =====================================================
 # 3. FRIEND REQUESTS REPOSITORY
 # =====================================================
@@ -763,12 +761,12 @@ class ScheduledCheckinRepository(BaseRepository[ScheduledCheckin]):
 # =====================================================
 
 class MJNetworkRepository:
-    """Combined repository for all MJ Network operations"""
+    """Combined repository for all MJ Network operations - FIXED"""
     
     def __init__(self, db: AsyncSession):
         self.db = db
         self.mj_registry = MJRegistryRepository(db)
-        self.relationships = RelationshipRepository(db)
+        self.relationships = NetworkRelationshipRepository(db)  # FIXED: Use NetworkRelationshipRepository
         self.friend_requests = FriendRequestRepository(db)
         self.conversations = MJConversationRepository(db)
         self.messages = MJMessageRepository(db)

@@ -44,8 +44,8 @@ class ChatMessage(BaseModel):
 
 
 # Database connection - FIXED URLs
-SQLALCHEMY_DATABASE_URL = "postgresql+asyncpg://posjzjctexijhfpphk.supabase.co:5432/postgres"
-ASYNCPG_DATABASE_URL = "postgresql://postgres:jhfpphk.supabase.co:5432/postgres"
+SQLALCHEMY_DATABASE_URL = "postgresql+asjctexijhfpphk.supabase.co:5432/postgres"
+ASYNCPG_DATABASE_URL = "postgresql://pjctexijhfpphk.supabase.co:5432/postgres"
 
 # For backwards compatibility
 DATABASE_URL = SQLALCHEMY_DATABASE_URL
