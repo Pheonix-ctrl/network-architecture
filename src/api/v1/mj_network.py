@@ -1,6 +1,8 @@
-# src/api/v1/mj_network.py - COMPLETE API ENDPOINTS
+# src/api/v1/mj_network.py - COMPLETE API ENDPOINTS - FIXED IMPORTS
+
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, and_, or_, desc, asc, text  # ← FIXED: Added missing imports
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, Field
 from datetime import datetime
@@ -232,7 +234,7 @@ async def discover_nearby_mjs(
     
     network_repo = MJNetworkRepository(db)
     
-    # Get user's current location
+    # Get user's current location - FIXED: Added missing import
     user_location_result = await db.execute(
         select(network_repo.locations.model).where(network_repo.locations.model.user_id == current_user.id)
     )
@@ -732,7 +734,7 @@ async def search_users(
             detail="Search query must be at least 2 characters"
         )
     
-    from sqlalchemy import select, and_, or_
+    # FIXED: Added missing imports
     from ...models.database.user import User as UserModel
     
     # Search by username or MJ instance ID
