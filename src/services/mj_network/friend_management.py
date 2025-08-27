@@ -5,7 +5,9 @@ from datetime import datetime
 
 from ...database.repositories.mj_network import MJNetworkRepository  # ← FIXED: Updated import path
 from ...models.database.mj_network import FriendRequestStatus, RelationshipStatus  # ← FIXED: Updated import path
+import logging
 
+logger = logging.getLogger("mj_network.friend_service")
 class FriendManagementService:
     """Service for managing friend requests and relationships"""
     
@@ -21,24 +23,36 @@ class FriendManagementService:
         suggested_relationship_type: str = "friend",
         discovery_method: str = "manual"
     ) -> Any:
-        """Send a friend request"""
+        """Send a friend request - ENHANCED LOGGING"""
+        
+        logger.info(f"Starting friend request process: {from_user_id} -> {to_user_id}")
         
         # Check if users are already friends
+        logger.info("Step 1: Checking existing relationship...")
         existing_relationship = await self.network_repo.relationships.get_mutual_relationship(from_user_id, to_user_id)
         if existing_relationship:
+            logger.warning(f"Friend request blocked - users already friends: relationship_id={existing_relationship.id}")
             raise ValueError("Users are already friends")
+        logger.info("No existing relationship found - OK")
         
         # Check if request already exists
+        logger.info("Step 2: Checking existing friend request...")
         existing_request = await self.network_repo.friend_requests.get_existing_request(from_user_id, to_user_id)
         if existing_request:
+            logger.warning(f"Friend request blocked - request already exists: request_id={existing_request.id}")
             raise ValueError("Friend request already sent")
+        logger.info("No existing request found - OK")
         
         # Check reverse request
+        logger.info("Step 3: Checking reverse friend request...")
         reverse_request = await self.network_repo.friend_requests.get_existing_request(to_user_id, from_user_id)
         if reverse_request:
+            logger.warning(f"Friend request blocked - reverse request exists: request_id={reverse_request.id}")
             raise ValueError("This user has already sent you a friend request. Please respond to their request instead.")
+        logger.info("No reverse request found - OK")
         
-        # Create friend request
+        # Create friend request (keep your existing creation logic)
+        logger.info("Step 4: Creating friend request record...")
         request_data = {
             "from_user_id": from_user_id,
             "to_user_id": to_user_id,
@@ -47,11 +61,19 @@ class FriendManagementService:
             "discovery_method": discovery_method
         }
         
-        friend_request = await self.network_repo.friend_requests.create(request_data)
+        logger.info(f"Friend request data: {request_data}")
         
-        print(f"👥 Friend request sent from user {from_user_id} to user {to_user_id}")
-        
-        return friend_request
+        try:
+            friend_request = await self.network_repo.friend_requests.create(request_data)
+            logger.info(f"Friend request created successfully: ID={friend_request.id}")
+            
+            print(f"👥 Friend request sent from user {from_user_id} to user {to_user_id}")
+            
+            return friend_request
+            
+        except Exception as e:
+            logger.error(f"Database error creating friend request: {str(e)} ({type(e).__name__})")
+            raise ValueError(f"Failed to create friend request: {str(e)}")
     
     async def accept_friend_request(
         self,

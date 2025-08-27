@@ -6,6 +6,7 @@ from sqlalchemy import select, update, delete, func, and_, or_, desc, asc, text
 from sqlalchemy.orm import selectinload
 from datetime import datetime, timedelta
 import math
+from datetime import datetime, timedelta
 
 from .base import BaseRepository
 from ...models.database.mj_network import (
@@ -994,7 +995,7 @@ class PendingMessageRepository(BaseRepository[PendingMessage]):
                 status=PendingMessageStatus.FAILED.value,
                 attempts=PendingMessage.attempts + 1,
                 last_error=error_message,
-                next_attempt_at=func.now() + func.make_interval(minutes=30)  # Retry in 30 minutes
+                next_attempt_at=datetime.utcnow() + timedelta(minutes=30) # Retry in 30 minutes
             )
         )
         await self.db.commit()
@@ -1067,7 +1068,7 @@ class UserLocationRepository(BaseRepository[UserLocation]):
                     accuracy_meters=accuracy_meters,
                     location_source=location_source,
                     is_visible_on_map=is_visible_on_map,
-                    expires_at=func.now() + func.make_interval(hours=12)
+                    expires_at=datetime.utcnow() + timedelta(hours=12)  # Clean timedelta approach
                 )
             )
             await self.db.commit()

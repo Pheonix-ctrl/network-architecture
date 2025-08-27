@@ -37,8 +37,9 @@ class ChatMessage(BaseModel):
     message: str
 
 # Database connection URLs
-SQLALCHEMY_DATABASE_URL = "postgresql+asyncpg://posdb.ahftijzjctexijhfpphk.supabase.co:5432/postgres"
-ASYNCPG_DATABASE_URL = "postgresql://postgres:theawakxijhfpphk.supabase.co:5432/postgres"
+SQLALCHEMY_DATABASE_URL = "postgresql+asyncpg://posctexijhfpphk.supabase.co:5432/postgres"
+ASYNCPG_DATABASE_URL = "postgresql://postgrphk.supabase.co:5432/postgres"
+
 
 
 
@@ -54,6 +55,57 @@ async def get_db_pool():
         except Exception as e:
             print(f"❌ Database pool failed: {e}")
     return db_pool
+
+async def verify_mj_network_on_startup():
+    """Verify MJ Network components during startup"""
+    
+    print("🔍 Verifying MJ Network components...")
+    
+    try:
+        # Import required modules
+        from src.config.database import AsyncSessionLocal
+        from src.database.repositories.mj_network import MJNetworkRepository
+        from src.services.mj_network.friend_management import FriendManagementService
+        from src.models.database.user import User
+        from src.models.database.mj_network import MJRegistry, FriendRequest, NetworkRelationship
+        from sqlalchemy import select, func
+        
+        async with AsyncSessionLocal() as db:
+            # Test database tables exist and are accessible
+            await db.execute(select(func.count(MJRegistry.id)))
+            print("✅ MJ Registry table accessible")
+            
+            await db.execute(select(func.count(FriendRequest.id)))
+            print("✅ Friend Request table accessible")
+            
+            await db.execute(select(func.count(NetworkRelationship.id)))
+            print("✅ Network Relationship table accessible")
+            
+            # Test repositories can be initialized
+            network_repo = MJNetworkRepository(db)
+            print("✅ MJ Network Repository initialized")
+            
+            # Test services can be initialized
+            friend_service = FriendManagementService(db)
+            print("✅ Friend Management Service initialized")
+            
+            # Get current user count
+            user_count_result = await db.execute(select(func.count(User.id)))
+            user_count = user_count_result.scalar()
+            print(f"✅ {user_count} users in system")
+            
+            # Get MJ registry count
+            mj_count_result = await db.execute(select(func.count(MJRegistry.id)))
+            mj_count = mj_count_result.scalar()
+            print(f"✅ {mj_count} MJ registries active")
+        
+        print("🎯 MJ Network verification complete - all systems operational")
+        
+    except Exception as e:
+        print(f"❌ MJ Network verification failed: {e}")
+        print(f"🔍 Error type: {type(e).__name__}")
+        raise RuntimeError(f"MJ Network startup verification failed: {e}")
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -79,6 +131,8 @@ async def lifespan(app: FastAPI):
         print(f"❌ MJ Network services failed: {e}")
     
     print("✅ MJ Network ready with COMPLETE networking capabilities")
+    await verify_mj_network_on_startup()
+
     yield
     
     # Shutdown

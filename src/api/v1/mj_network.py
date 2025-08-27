@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, or_, desc, asc, text  # ← FIXED: Added missing imports
+from sqlalchemy import select, and_, or_, desc, asc, text,func  # ← FIXED: Added missing imports
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, Field
 from datetime import datetime
@@ -14,7 +14,15 @@ from ...database.repositories.mj_network import MJNetworkRepository
 from ...services.mj_network.mj_communication import MJCommunicationService
 from ...services.mj_network.friend_management import FriendManagementService
 from ...config.database import AsyncSessionLocal
+from ...models.database.user import User
+from ...models.database.mj_network import (
+    MJRegistry, NetworkRelationship, FriendRequest, MJConversation, 
+    MJMessage, PendingMessage, ScheduledCheckin, UserLocation
+)
+import logging
+from sqlalchemy import text
 
+logger = logging.getLogger("mj_network")
 router = APIRouter()
 
 # =====================================================
@@ -817,4 +825,224 @@ async def get_comprehensive_network_stats(
             "last_friend_added": max([f.created_at for f in network_data["friends"]], default=None),
             "last_location_update": network_data["location"].created_at if network_data["location"] else None
         }
+        
+    }
+# =====================================================
+# DEBUG ENDPOINTS - Add to your existing router
+# =====================================================
+
+@router.post("/debug/friend-request-test")
+async def debug_friend_request(
+    from_user_id: int,
+    to_user_id: int,
+    current_user: User = Depends(get_authenticated_user),
+    db: AsyncSession = Depends(get_db_session)
+):
+    """Debug why friend requests aren't working"""
+    
+    logger.info(f"DEBUG: Friend request test {from_user_id} -> {to_user_id}")
+    results = {"timestamp": datetime.utcnow().isoformat()}
+    
+    try:
+        # 1. Check if users exist in database
+        from_user_result = await db.execute(
+            select(User).where(User.id == from_user_id)
+        )
+        to_user_result = await db.execute(
+            select(User).where(User.id == to_user_id)  
+        )
+        
+        from_user = from_user_result.scalar_one_or_none()
+        to_user = to_user_result.scalar_one_or_none()
+        
+        results["users"] = {
+            "from_user_exists": from_user is not None,
+            "from_user_data": {"id": from_user.id, "username": from_user.username} if from_user else None,
+            "to_user_exists": to_user is not None,
+            "to_user_data": {"id": to_user.id, "username": to_user.username} if to_user else None
+        }
+        
+        if not from_user or not to_user:
+            results["error"] = "One or both users don't exist"
+            return results
+        
+        # 2. Check MJ registries exist
+        network_repo = MJNetworkRepository(db)
+        from_mj = await network_repo.mj_registry.get_by_user_id(from_user_id)
+        to_mj = await network_repo.mj_registry.get_by_user_id(to_user_id)
+        
+        results["mj_registries"] = {
+            "from_mj_exists": from_mj is not None,
+            "from_mj_status": from_mj.status if from_mj else None,
+            "to_mj_exists": to_mj is not None, 
+            "to_mj_status": to_mj.status if to_mj else None
+        }
+        
+        # 3. Check existing relationship
+        relationship = await network_repo.relationships.get_mutual_relationship(from_user_id, to_user_id)
+        results["existing_relationship"] = {
+            "exists": relationship is not None,
+            "type": relationship.relationship_type if relationship else None,
+            "status": relationship.status if relationship else None
+        }
+        
+        # 4. Check existing friend requests
+        existing_request = await network_repo.friend_requests.get_existing_request(from_user_id, to_user_id)
+        reverse_request = await network_repo.friend_requests.get_existing_request(to_user_id, from_user_id)
+        
+        results["existing_requests"] = {
+            "outgoing_request_exists": existing_request is not None,
+            "outgoing_request_status": existing_request.status if existing_request else None,
+            "incoming_request_exists": reverse_request is not None,
+            "incoming_request_status": reverse_request.status if reverse_request else None
+        }
+        
+        # 5. Check permissions
+        results["permissions"] = {
+            "current_user_id": current_user.id,
+            "is_from_user": current_user.id == from_user_id,
+            "can_send_request": current_user.id == from_user_id
+        }
+        
+        # 6. Database constraints check
+        try:
+            # Test if we can create a friend request (rollback after)
+            test_request = FriendRequest(
+                from_user_id=from_user_id,
+                to_user_id=to_user_id,
+                request_message="Test request",
+                suggested_relationship_type="friend",
+                discovery_method="manual"
+            )
+            db.add(test_request)
+            await db.flush()  # This will check constraints
+            await db.rollback()  # Don't actually save it
+            results["database_constraints"] = {"can_create": True}
+            
+        except Exception as e:
+            await db.rollback()
+            results["database_constraints"] = {"can_create": False, "error": str(e)}
+        
+        logger.info(f"DEBUG results: {results}")
+        return results
+        
+    except Exception as e:
+        logger.error(f"DEBUG endpoint error: {e}")
+        results["debug_error"] = str(e)
+        return results
+
+@router.get("/debug/health-comprehensive")
+async def comprehensive_health_check(
+    current_user: User = Depends(get_authenticated_user),
+    db: AsyncSession = Depends(get_db_session)
+):
+    """Comprehensive MJ Network health check"""
+    
+    results = {
+        "timestamp": datetime.utcnow().isoformat(),
+        "checks": {}
+    }
+    
+    # 1. Database connectivity
+    try:
+        await db.execute(text("SELECT 1"))
+        results["checks"]["database"] = {"status": "healthy", "message": "Connected"}
+    except Exception as e:
+        results["checks"]["database"] = {"status": "error", "message": str(e)}
+    
+    # 2. MJ Network tables
+    try:
+        network_repo = MJNetworkRepository(db)
+        
+        # Count records in each table
+        mj_count = await db.execute(select(func.count(MJRegistry.id)))
+        friend_req_count = await db.execute(select(func.count(FriendRequest.id)))
+        relationship_count = await db.execute(select(func.count(NetworkRelationship.id)))
+        conversation_count = await db.execute(select(func.count(MJConversation.id)))
+        message_count = await db.execute(select(func.count(MJMessage.id)))
+        
+        results["checks"]["tables"] = {
+            "status": "healthy",
+            "record_counts": {
+                "mj_registry": mj_count.scalar(),
+                "friend_requests": friend_req_count.scalar(),
+                "relationships": relationship_count.scalar(),
+                "conversations": conversation_count.scalar(),
+                "messages": message_count.scalar()
+            }
+        }
+    except Exception as e:
+        results["checks"]["tables"] = {"status": "error", "message": str(e)}
+    
+    # 3. Repository initialization
+    try:
+        network_repo = MJNetworkRepository(db)
+        results["checks"]["repositories"] = {"status": "healthy", "message": "All repositories initialized"}
+    except Exception as e:
+        results["checks"]["repositories"] = {"status": "error", "message": str(e)}
+    
+    # 4. Services initialization
+    try:
+        friend_service = FriendManagementService(db)
+        communication_service = MJCommunicationService(db)
+        results["checks"]["services"] = {"status": "healthy", "message": "All services initialized"}
+    except Exception as e:
+        results["checks"]["services"] = {"status": "error", "message": str(e)}
+    
+    # 5. Current user's MJ Network status
+    try:
+        network_data = await network_repo.get_complete_user_network_data(current_user.id)
+        results["checks"]["user_network"] = {
+            "status": "healthy",
+            "user_id": current_user.id,
+            "has_mj_registry": network_data["mj_registry"] is not None,
+            "friends_count": len(network_data["friends"]),
+            "pending_requests": len(network_data["pending_friend_requests"]),
+            "conversations": len(network_data["conversations"])
+        }
+    except Exception as e:
+        results["checks"]["user_network"] = {"status": "error", "message": str(e)}
+    
+    # Overall status
+    all_healthy = all(check.get("status") == "healthy" for check in results["checks"].values())
+    results["overall_status"] = "healthy" if all_healthy else "degraded"
+    
+    return results
+
+@router.get("/debug/users-list")
+async def debug_users_list(
+    current_user: User = Depends(get_authenticated_user),
+    db: AsyncSession = Depends(get_db_session)
+):
+    """List all users for debugging friend requests"""
+    
+    result = await db.execute(
+        select(User.id, User.username, User.email, User.mj_instance_id)
+        .order_by(User.id)
+    )
+    users = result.all()
+    
+    # Get MJ registry status for each user
+    users_with_mj = []
+    for user in users:
+        mj_result = await db.execute(
+            select(MJRegistry.status, MJRegistry.created_at)
+            .where(MJRegistry.user_id == user.id)
+        )
+        mj_data = mj_result.first()
+        
+        users_with_mj.append({
+            "id": user.id,
+            "username": user.username,
+            "email": user.email,
+            "mj_instance_id": user.mj_instance_id,
+            "mj_status": mj_data.status if mj_data else "no_registry",
+            "mj_created": mj_data.created_at.isoformat() if mj_data else None,
+            "is_current_user": user.id == current_user.id
+        })
+    
+    return {
+        "users": users_with_mj,
+        "total_count": len(users_with_mj),
+        "current_user_id": current_user.id
     }
