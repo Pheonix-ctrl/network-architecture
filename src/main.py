@@ -37,8 +37,10 @@ class ChatMessage(BaseModel):
     message: str
 
 # Database connection URLs
-SQLALCHEMY_DATABASE_URL = "postgresql+asyncpg://postgres:theawakzjctexijhfpphk.supabase.co:5432/postgres"
-ASYNCPG_DATABASE_URL = "postgresql://postgres:theawakzjctexijhfpphk.supabase.co:5432/postgres"
+SQLALCHEMY_DATABASE_URL = "postgresql+asyncpg://posdb.ahftijzjctexijhfpphk.supabase.co:5432/postgres"
+ASYNCPG_DATABASE_URL = "postgresql://postgres:theawakxijhfpphk.supabase.co:5432/postgres"
+
+
 
 # Global database pool
 db_pool = None
