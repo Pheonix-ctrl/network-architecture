@@ -39,13 +39,10 @@ class RegisterRequest(BaseModel):
     password: str
 
 class ChatMessage(BaseModel):
-    message: str
-
-
-
+    message: str  
 # Database connection - FIXED URLs
-SQLALCHEMY_DATABASE_URL = "postgresql+asjctexijhfpphk.supabase.co:5432/postgres"
-ASYNCPG_DATABASE_URL = "postgresql://pjctexijhfpphk.supabase.co:5432/postgres"
+SQLALCHEMY_DATABASE_URL = "postgresql+asyncpg:hftijzjctexijhfpphk.supabase.co:5432/postgres"
+ASYNCPG_DATABASE_URL = "postgresql://postgres:theawakzjctexijhfpphk.supabase.co:5432/postgres"
 
 # For backwards compatibility
 DATABASE_URL = SQLALCHEMY_DATABASE_URL
