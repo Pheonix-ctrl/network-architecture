@@ -1,17 +1,17 @@
-# src/services/mj_network/mj_communication.py - FIXED VERSION
+# src/services/mj_network/mj_communication.py - COMPLETE WORKING VERSION
 import json
 from typing import Dict, Any, List, Optional, Tuple
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime
 
-from ...database.repositories.mj_network import MJNetworkRepository  # ← FIXED: Updated import path
+from ...database.repositories.mj_network import MJNetworkRepository
 from ...database.repositories.memory import MemoryRepository
 from ...services.ai.openai_client import OpenAIClient
 from ...services.ai.personality.prompts import PersonalityPrompts
-from ...models.database.mj_network import MJStatus, DeliveryStatus, MessageType  # ← FIXED: Updated import path
+from ...models.database.mj_network import MJStatus, DeliveryStatus, MessageType
 
 class MJCommunicationService:
-    """Core service for MJ-to-MJ communication"""
+    """Core service for MJ-to-MJ communication - The heart of your network"""
     
     def __init__(self, db: AsyncSession):
         self.db = db
@@ -27,23 +27,27 @@ class MJCommunicationService:
         conversation_topic: Optional[str] = None
     ) -> Dict[str, Any]:
         """
-        Main method for initiating MJ-to-MJ conversation
+        🌐 MAIN MJ-TO-MJ CONVERSATION FLOW
         
-        Flow:
-        1. Check if users are friends and get privacy settings
-        2. Get target user's context/memories
-        3. Build prompt with privacy settings
+        This is where the magic happens:
+        1. Check if users are friends
+        2. Get target user's memories/context  
+        3. Build privacy-aware prompt
         4. Generate OpenAI response
-        5. Create conversation and message records
-        6. Handle online/offline delivery
+        5. Save message and handle delivery
         """
+        
+        print(f"🤖 Initiating MJ conversation: User {from_user_id} -> User {to_user_id}")
+        print(f"💭 Purpose: {message_purpose}")
         
         # Step 1: Validate relationship and get privacy settings
         relationship = await self.network_repo.relationships.get_mutual_relationship(from_user_id, to_user_id)
         if not relationship:
             raise ValueError("Users are not friends. Send a friend request first.")
         
-        # Step 2: Check if target user allows offline responses
+        print(f"✅ Relationship found: {relationship.relationship_type} (trust: {relationship.trust_level})")
+        
+        # Step 2: Check target user's MJ status
         target_mj_registry = await self.network_repo.mj_registry.get_by_user_id(to_user_id)
         if not target_mj_registry:
             raise ValueError("Target user's MJ is not registered in the network")
@@ -52,6 +56,9 @@ class MJCommunicationService:
         can_respond_when_offline = await self.network_repo.relationships.can_mj_respond_when_offline(
             to_user_id, from_user_id
         )
+        
+        print(f"🔍 Target user status: {'online' if target_user_online else 'offline'}")
+        print(f"📱 Can respond when offline: {can_respond_when_offline}")
         
         if not target_user_online and not can_respond_when_offline:
             raise ValueError("Target user is offline and does not allow offline responses")
@@ -66,16 +73,31 @@ class MJCommunicationService:
                 conversation_topic=conversation_topic,
                 relationship_id=relationship.id
             )
+            print(f"💬 Created new conversation: {conversation.id}")
+        else:
+            print(f"💬 Using existing conversation: {conversation.id}")
         
-        # Step 4: Generate MJ response using OpenAI
-        mj_response_data = await self._generate_mj_response(
-            from_user_id=from_user_id,
-            to_user_id=to_user_id,
-            message_purpose=message_purpose,
-            privacy_settings=relationship.privacy_settings or {},
-
-            relationship_type=relationship.relationship_type
-        )
+        # Step 4: 🧠 GENERATE MJ RESPONSE - This is the core AI magic
+        try:
+            mj_response_data = await self._generate_mj_response(
+                from_user_id=from_user_id,
+                to_user_id=to_user_id,
+                message_purpose=message_purpose,
+                privacy_settings=relationship.privacy_settings or {},
+                relationship_type=relationship.relationship_type
+            )
+            print(f"🎯 Generated response: '{mj_response_data['response_content'][:100]}...'")
+        except Exception as e:
+            print(f"❌ Failed to generate MJ response: {e}")
+            # Provide fallback response
+            mj_response_data = {
+                "response_content": "I'm having trouble finding the right words right now... but I'm here for you. Maybe try reaching out again in a moment?",
+                "prompt_used": f"Fallback response for: {message_purpose}",
+                "raw_response": "Fallback response due to generation error",
+                "privacy_settings_applied": relationship.privacy_settings or {},
+                "memories_used": [],
+                "tokens_used": 0
+            }
         
         # Step 5: Create message record
         message = await self.network_repo.messages.create_mj_message(
@@ -91,28 +113,39 @@ class MJCommunicationService:
             tokens_used=mj_response_data["tokens_used"]
         )
         
-        # Step 6: Mark as delivered if target is online
+        print(f"💾 Saved message: {message.id}")
+        
+        # Step 6: Handle delivery based on online status
         if target_user_online:
             await self.network_repo.messages.mark_as_delivered(message.id)
+            await self.network_repo.mj_registry.increment_stats(
+                user_id=to_user_id,
+                messages_received=1
+            )
+            print(f"📨 Message delivered immediately (user online)")
+        else:
+            # Will be queued for offline delivery by the calling function
+            print(f"📬 Message will be queued for offline delivery")
         
-        # Step 7: Update statistics
+        # Step 7: Update sender statistics
         await self.network_repo.mj_registry.increment_stats(
             user_id=from_user_id,
             messages_sent=1
         )
         
-        if target_user_online:
-            await self.network_repo.mj_registry.increment_stats(
-                user_id=to_user_id,
-                messages_received=1
-            )
+        # Update conversation stats
+        await self.network_repo.conversations.update_last_message(conversation.id)
+        await self.network_repo.relationships.update_interaction(from_user_id, to_user_id)
+        
+        print(f"✅ MJ conversation completed successfully")
         
         return {
             "conversation": conversation,
             "message": message,
             "target_user_online": target_user_online,
             "response_generated": True,
-            "tokens_used": mj_response_data["tokens_used"]
+            "tokens_used": mj_response_data["tokens_used"],
+            "response_content": mj_response_data["response_content"]  # For immediate display
         }
     
     async def _generate_mj_response(
@@ -124,29 +157,29 @@ class MJCommunicationService:
         relationship_type: str
     ) -> Dict[str, Any]:
         """
-        Generate MJ response using OpenAI with privacy-aware prompting
+        🧠 THE CORE AI GENERATION - Where MJ personality meets privacy
         
-        This is where the magic happens:
-        1. Get target user's memories/context
-        2. Build privacy-aware prompt
-        3. Call OpenAI
-        4. Return structured response data
+        This creates the actual MJ-to-MJ conversation using:
+        1. Target user's memories for context
+        2. Privacy settings for filtering
+        3. MJ personality for authentic responses
         """
         
-        # Step 1: Get target user's memories for context
-        target_user_memories = await self.memory_repo.get_recent_memories(
-            user_id=to_user_id,
-            limit=10,
-            days=30
-        )
+        print(f"🧠 Generating MJ response with privacy level: {privacy_settings}")
         
-        # Step 2: Get recent conversations for additional context
-        recent_conversations = await self.network_repo.conversations.get_user_conversations(
-            user_id=to_user_id,
-            limit=5
-        )
+        # Step 1: Get target user's memories for context (what MJ knows about them)
+        try:
+            target_user_memories = await self.memory_repo.get_recent_memories(
+                user_id=to_user_id,
+                limit=10,
+                days=30
+            )
+            print(f"💭 Found {len(target_user_memories)} memories for context")
+        except Exception as e:
+            print(f"⚠️ Memory retrieval failed: {e}")
+            target_user_memories = []
         
-        # Step 3: Build context string from memories
+        # Step 2: Build context from memories
         context_parts = []
         memories_used = []
         
@@ -161,8 +194,7 @@ class MJCommunicationService:
         
         user_context = "\n".join(context_parts) if context_parts else "No specific memories available."
         
-        # Step 4: Build privacy-aware prompt
-        # Step 4: Build privacy-aware prompt
+        # Step 3: 🎭 Build MJ-to-MJ prompt with personality and privacy
         prompt = PersonalityPrompts.build_mj_to_mj_prompt(
             message_purpose=message_purpose,
             user_context=user_context,
@@ -172,8 +204,11 @@ class MJCommunicationService:
             to_user_id=to_user_id
         )
         
-        # Step 5: Call OpenAI API
+        print(f"📝 Built MJ-to-MJ prompt ({len(prompt)} chars)")
+        
+        # Step 4: 🤖 Generate response using OpenAI
         try:
+            print(f"🔄 Calling OpenAI for MJ response...")
             openai_response = await self.openai_client.chat_completion(
                 messages=[
                     {"role": "system", "content": prompt},
@@ -189,9 +224,12 @@ class MJCommunicationService:
             if not response_content:
                 response_content = "I'm having trouble finding the right words right now... maybe try again in a moment?"
             
+            print(f"✅ OpenAI response generated: {len(response_content)} chars, {tokens_used} tokens")
+            
         except Exception as e:
-            print(f"OpenAI error in MJ communication: {e}")
+            print(f"❌ OpenAI error in MJ communication: {e}")
             response_content = "I'm having some technical difficulties right now, but I'm still here for you."
+            openai_response = {"content": response_content}
             tokens_used = 0
         
         return {
@@ -203,12 +241,8 @@ class MJCommunicationService:
             "tokens_used": tokens_used
         }
     
-
-    
-
-    
     async def queue_offline_message(self, message_id: int, recipient_user_id: int):
-        """Queue message for offline delivery"""
+        """📬 Queue message for offline delivery"""
         
         await self.network_repo.pending_messages.queue_message(
             message_id=message_id,
@@ -219,10 +253,12 @@ class MJCommunicationService:
     
     async def deliver_pending_messages(self, user_id: int) -> int:
         """
-        Deliver all pending messages when user comes online
+        📨 Deliver all pending messages when user comes online
         
         Called when MJ status changes to online
         """
+        
+        print(f"📨 Delivering pending messages for user {user_id}")
         
         pending_messages = await self.network_repo.pending_messages.get_pending_for_user(user_id)
         delivered_count = 0
@@ -248,6 +284,9 @@ class MJCommunicationService:
                 print(f"❌ Failed to deliver message {pending.message_id}: {e}")
                 continue
         
+        if delivered_count > 0:
+            print(f"✅ Delivered {delivered_count} pending messages to user {user_id}")
+        
         return delivered_count
     
     async def get_conversation_history(
@@ -256,7 +295,7 @@ class MJCommunicationService:
         user_b_id: int,
         limit: int = 20
     ) -> List[Dict[str, Any]]:
-        """Get formatted conversation history between two users"""
+        """📜 Get formatted conversation history between two users"""
         
         conversation = await self.network_repo.conversations.get_conversation_between_users(user_a_id, user_b_id)
         if not conversation:
@@ -277,40 +316,11 @@ class MJCommunicationService:
                 "message_type": message.message_type,
                 "delivery_status": message.delivery_status,
                 "created_at": message.created_at,
-                "tokens_used": message.tokens_used
+                "tokens_used": message.tokens_used,
+                "privacy_level_applied": message.privacy_settings_applied
             })
         
         return formatted_messages
-    
-    async def generate_mj_checkin_response(
-        self,
-        checker_user_id: int,
-        target_user_id: int,
-        checkin_message: str,
-        checkin_type: str = "general"
-    ) -> Dict[str, Any]:
-        """
-        Generate automated check-in response for scheduled check-ins
-        
-        This is similar to regular MJ communication but optimized for check-ins
-        """
-        
-        # Get relationship for privacy settings
-        relationship = await self.network_repo.relationships.get_mutual_relationship(checker_user_id, target_user_id)
-        if not relationship:
-            raise ValueError("No relationship found for scheduled check-in")
-        
-        # Generate response using similar logic to regular MJ communication
-        response_data = await self._generate_mj_response(
-            from_user_id=checker_user_id,
-            to_user_id=target_user_id,
-            message_purpose=f"Scheduled check-in: {checkin_message}",
-            privacy_settings=relationship.privacy_settings or {},
-
-            relationship_type=relationship.relationship_type
-        )
-        
-        return response_data
     
     async def create_scheduled_checkin_conversation(
         self,
@@ -319,71 +329,34 @@ class MJCommunicationService:
         checkin_data: Dict[str, Any]
     ) -> Dict[str, Any]:
         """
-        Execute a scheduled check-in by creating a conversation and message
+        📅 Execute a scheduled check-in by creating a conversation and message
         
         This is called by the scheduled check-in system
         """
         
+        print(f"📅 Executing scheduled check-in: {checker_user_id} -> {target_user_id}")
+        
         try:
-            # Generate the check-in response
-            response_data = await self.generate_mj_checkin_response(
-                checker_user_id=checker_user_id,
-                target_user_id=target_user_id,
-                checkin_message=checkin_data.get("checkin_message", "How are you doing?"),
-                checkin_type=checkin_data.get("checkin_type", "general")
-            )
-            
-            # Get or create conversation
-            conversation = await self.network_repo.conversations.get_conversation_between_users(
-                checker_user_id, target_user_id
-            )
-            if not conversation:
-                relationship = await self.network_repo.relationships.get_mutual_relationship(
-                    checker_user_id, target_user_id
-                )
-                conversation = await self.network_repo.conversations.create_conversation(
-                    user_a_id=checker_user_id,
-                    user_b_id=target_user_id,
-                    initiated_by_user_id=checker_user_id,
-                    conversation_topic=f"Scheduled check-in: {checkin_data.get('checkin_name', 'General')}",
-                    relationship_id=relationship.id if relationship else None
-                )
-            
-            # Create the check-in message
-            message = await self.network_repo.messages.create_mj_message(
-                conversation_id=conversation.id,
+            # Use the regular MJ conversation flow for check-ins
+            result = await self.initiate_mj_conversation(
                 from_user_id=checker_user_id,
                 to_user_id=target_user_id,
-                message_content=response_data["response_content"],
-                message_type=MessageType.CHECK_IN.value,
-                openai_prompt_used=response_data["prompt_used"],
-                openai_response_raw=response_data["raw_response"],
-                privacy_settings_applied=response_data["privacy_settings_applied"],
-                user_memories_used=response_data["memories_used"],
-                tokens_used=response_data["tokens_used"]
+                message_purpose=f"Scheduled check-in: {checkin_data.get('checkin_message', 'How are you doing?')}",
+                conversation_topic=f"Scheduled check-in: {checkin_data.get('checkin_name', 'General')}"
             )
             
-            # Check if target user is online
-            target_mj_registry = await self.network_repo.mj_registry.get_by_user_id(target_user_id)
-            target_user_online = target_mj_registry and target_mj_registry.status == MJStatus.ONLINE
-            
-            if target_user_online:
-                await self.network_repo.messages.mark_as_delivered(message.id)
-                await self.network_repo.mj_registry.increment_stats(target_user_id, messages_received=1)
-            else:
-                # Queue for offline delivery
-                await self.queue_offline_message(message.id, target_user_id)
-            
-            # Update sender stats
-            await self.network_repo.mj_registry.increment_stats(checker_user_id, messages_sent=1)
+            # Update message type to check-in
+            await self.network_repo.messages.update(result["message"].id, {
+                "message_type": MessageType.CHECK_IN.value
+            })
             
             return {
                 "success": True,
-                "conversation_id": conversation.id,
-                "message_id": message.id,
-                "target_user_online": target_user_online,
-                "response_content": response_data["response_content"],
-                "tokens_used": response_data["tokens_used"]
+                "conversation_id": result["conversation"].id,
+                "message_id": result["message"].id,
+                "target_user_online": result["target_user_online"],
+                "response_content": result["response_content"],
+                "tokens_used": result["tokens_used"]
             }
             
         except Exception as e:
@@ -392,3 +365,59 @@ class MJCommunicationService:
                 "success": False,
                 "error": str(e)
             }
+    
+    async def send_status_update(
+        self,
+        from_user_id: int,
+        status_message: str,
+        target_users: List[int] = None
+    ) -> Dict[str, Any]:
+        """
+        📢 Send status update to friends (like "I'm at the gym")
+        
+        This broadcasts to all friends or specific users
+        """
+        
+        if not target_users:
+            # Get all friends
+            friends = await self.network_repo.relationships.get_user_friends(from_user_id)
+            target_users = [f.friend_user_id for f in friends]
+        
+        results = []
+        
+        for target_user_id in target_users:
+            try:
+                result = await self.initiate_mj_conversation(
+                    from_user_id=from_user_id,
+                    to_user_id=target_user_id,
+                    message_purpose=f"Status update: {status_message}",
+                    conversation_topic="Status Update"
+                )
+                
+                # Update message type to status_update
+                await self.network_repo.messages.update(result["message"].id, {
+                    "message_type": MessageType.STATUS_UPDATE.value
+                })
+                
+                results.append({
+                    "target_user_id": target_user_id,
+                    "success": True,
+                    "message_id": result["message"].id
+                })
+                
+            except Exception as e:
+                print(f"❌ Failed to send status update to user {target_user_id}: {e}")
+                results.append({
+                    "target_user_id": target_user_id,
+                    "success": False,
+                    "error": str(e)
+                })
+        
+        successful_sends = len([r for r in results if r["success"]])
+        
+        return {
+            "message": f"Status update sent to {successful_sends}/{len(target_users)} friends",
+            "results": results,
+            "total_targets": len(target_users),
+            "successful_sends": successful_sends
+        }

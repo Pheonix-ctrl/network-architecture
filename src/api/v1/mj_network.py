@@ -1,7 +1,6 @@
-# src/api/v1/mj_network.py - FIXED VERSION
+# src/api/v1/mj_network.py - COMPLETE API ENDPOINTS
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, or_  # ← FIXED: Added missing SQLAlchemy imports
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, Field
 from datetime import datetime
@@ -9,17 +8,15 @@ from datetime import datetime
 from ...config.database import get_db_session
 from ...core.dependencies import get_authenticated_user
 from ...models.database.user import User
-from ...database.repositories.mj_network import MJNetworkRepository  # ← FIXED: Updated import path
-from ...services.mj_network.mj_communication import MJCommunicationService  # ← FIXED: Updated import path
-from ...services.mj_network.friend_management import FriendManagementService  # ← FIXED: Updated import path
+from ...database.repositories.mj_network import MJNetworkRepository
+from ...services.mj_network.mj_communication import MJCommunicationService
+from ...services.mj_network.friend_management import FriendManagementService
 from ...config.database import AsyncSessionLocal
 
-
-import math
 router = APIRouter()
 
 # =====================================================
-# PYDANTIC SCHEMAS
+# PYDANTIC SCHEMAS FOR API
 # =====================================================
 
 class LocationUpdate(BaseModel):
@@ -40,10 +37,6 @@ class FriendRequestResponse(BaseModel):
     response_message: Optional[str] = None
     relationship_type: Optional[str] = "friend"
 
-class PrivacySettingsUpdate(BaseModel):
-    friend_user_id: int
-    privacy_settings: Dict[str, Any]
-
 class MJTalkRequest(BaseModel):
     target_user_id: int
     message_purpose: str  # "Ask how they're doing", "Check on their health", etc.
@@ -58,71 +51,12 @@ class ScheduledCheckinCreate(BaseModel):
     checkin_message: str = "How are you doing?"
     checkin_type: str = "general"
 
-# Response Models
-class MJRegistryResponse(BaseModel):
-    id: int
-    user_id: int
-    mj_instance_id: str
-    status: str
-    last_seen: datetime
-    location_enabled: bool
-    total_conversations: int
-    total_messages_sent: int
-    total_messages_received: int
-
-class UserLocationResponse(BaseModel):
-    user_id: int
-    username: str
-    mj_instance_id: str
-    latitude: float
-    longitude: float
-    distance_km: Optional[float] = None
-
-class FriendResponse(BaseModel):
-    id: int
-    friend_user_id: int
-    friend_username: str
-    friend_mj_instance_id: str
-    relationship_type: str
-    status: str
-    trust_level: float
-    last_interaction: Optional[datetime]
-    can_respond_when_offline: bool
-
-class ConversationResponse(BaseModel):
-    id: int
-    user_a_id: int
-    user_b_id: int
-    user_a_username: str
-    user_b_username: str
-    conversation_topic: Optional[str]
-    status: str
-    last_message_at: datetime
-    message_count: int
-
-class MessageResponse(BaseModel):
-    id: int
-    from_user_id: int
-    to_user_id: int
-    from_username: str
-    to_username: str
-    message_content: str
-    message_type: str
-    delivery_status: str
-    created_at: datetime
-    tokens_used: int
-
-
-def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    R = 6371.0
-    lat1, lon1, lat2, lon2 = map(math.radians, [lat1, lon1, lat2, lon2])
-    dlat = lat2 - lat1
-    dlon = lon2 - lon1
-    a = math.sin(dlat/2)**2 + math.cos(lat1)*math.cos(lat2)*math.sin(dlon/2)**2
-    return 2 * R * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+class StatusUpdateRequest(BaseModel):
+    status_message: str
+    target_users: Optional[List[int]] = None  # If None, sends to all friends
 
 async def _queue_offline_message_safe(message_id: int, recipient_user_id: int):
-    # Create a brand-new session for the background work
+    """Background task to queue offline messages safely"""
     async with AsyncSessionLocal() as session:
         svc = MJCommunicationService(session)
         await svc.queue_offline_message(message_id, recipient_user_id)
@@ -136,14 +70,26 @@ async def initialize_mj_registry(
     current_user: User = Depends(get_authenticated_user),
     db: AsyncSession = Depends(get_db_session)
 ):
-    """Initialize MJ registry for current user"""
+    """🌐 Initialize MJ registry for current user"""
     
     network_repo = MJNetworkRepository(db)
     
     # Check if MJ registry already exists
     existing_registry = await network_repo.mj_registry.get_by_user_id(current_user.id)
     if existing_registry:
-        return {"message": "MJ registry already exists", "mj_registry": existing_registry}
+        return {
+            "message": "MJ registry already exists", 
+            "mj_registry": {
+                "id": existing_registry.id,
+                "user_id": existing_registry.user_id,
+                "mj_instance_id": existing_registry.mj_instance_id,
+                "status": existing_registry.status,
+                "location_enabled": existing_registry.location_enabled,
+                "total_conversations": existing_registry.total_conversations,
+                "total_messages_sent": existing_registry.total_messages_sent,
+                "total_messages_received": existing_registry.total_messages_received,
+            }
+        }
     
     # Create MJ registry
     registry_data = {
@@ -162,7 +108,6 @@ async def initialize_mj_registry(
             "user_id": mj_registry.user_id,
             "mj_instance_id": mj_registry.mj_instance_id,
             "status": mj_registry.status,
-            "last_seen": mj_registry.last_seen,
             "location_enabled": mj_registry.location_enabled,
             "total_conversations": mj_registry.total_conversations,
             "total_messages_sent": mj_registry.total_messages_sent,
@@ -170,13 +115,12 @@ async def initialize_mj_registry(
         }
     }
 
-
 @router.get("/registry/status")
 async def get_mj_status(
     current_user: User = Depends(get_authenticated_user),
     db: AsyncSession = Depends(get_db_session)
 ):
-    """Get current MJ status and statistics"""
+    """📊 Get current MJ status and comprehensive network statistics"""
     
     network_repo = MJNetworkRepository(db)
     network_data = await network_repo.get_complete_user_network_data(current_user.id)
@@ -198,9 +142,9 @@ async def get_mj_status(
         "pending_requests": len(network_data["pending_friend_requests"]),
         "active_conversations": len(network_data["conversations"]),
         "pending_messages": len(network_data["pending_messages"]),
-        "has_location": network_data["location"] is not None
+        "has_location": network_data["location"] is not None,
+        "scheduled_checkins": len(network_data["scheduled_checkins"])
     }
-
 
 @router.put("/registry/status/{new_status}")
 async def update_mj_status(
@@ -208,7 +152,7 @@ async def update_mj_status(
     current_user: User = Depends(get_authenticated_user),
     db: AsyncSession = Depends(get_db_session)
 ):
-    """Update MJ online status"""
+    """🔄 Update MJ online status"""
     
     valid_statuses = ["online", "offline", "away", "busy"]
     if new_status not in valid_statuses:
@@ -229,7 +173,7 @@ async def update_mj_status(
     return {"message": f"MJ status updated to {new_status}"}
 
 # =====================================================
-# 2. LOCATION & DISCOVERY ENDPOINTS
+# 2. LOCATION & MAP DISCOVERY ENDPOINTS
 # =====================================================
 
 @router.put("/location")
@@ -238,7 +182,7 @@ async def update_location(
     current_user: User = Depends(get_authenticated_user),
     db: AsyncSession = Depends(get_db_session)
 ):
-    """Update user location"""
+    """📍 Update user location for map discovery"""
     
     network_repo = MJNetworkRepository(db)
     
@@ -262,7 +206,6 @@ async def update_location(
     mj_registry = await network_repo.mj_registry.get_by_user_id(current_user.id)
     if mj_registry and not mj_registry.location_enabled:
         capabilities = (mj_registry.capabilities or {}).copy()
-
         capabilities["location"] = True
         
         await network_repo.mj_registry.update(mj_registry.id, {
@@ -272,7 +215,11 @@ async def update_location(
     
     return {
         "message": "Location updated successfully",
-        "location": location
+        "location": {
+            "latitude": float(location.latitude),
+            "longitude": float(location.longitude),
+            "is_visible_on_map": location.is_visible_on_map
+        }
     }
 
 @router.get("/discover/nearby")
@@ -281,15 +228,15 @@ async def discover_nearby_mjs(
     current_user: User = Depends(get_authenticated_user),
     db: AsyncSession = Depends(get_db_session)
 ):
-    """Discover nearby MJ users"""
+    """🔍 Discover nearby MJ users on the map"""
     
     network_repo = MJNetworkRepository(db)
     
     # Get user's current location
-    user_location = await db.execute(
+    user_location_result = await db.execute(
         select(network_repo.locations.model).where(network_repo.locations.model.user_id == current_user.id)
     )
-    user_location_obj = user_location.scalar_one_or_none()
+    user_location_obj = user_location_result.scalar_one_or_none()
     
     if not user_location_obj:
         raise HTTPException(
@@ -305,22 +252,30 @@ async def discover_nearby_mjs(
         exclude_user_id=current_user.id
     )
     
-    # Format response
+    # Format response with distance calculations
+    import math
+    
+    def calculate_distance(lat1, lon1, lat2, lon2):
+        R = 6371  # Earth's radius in km
+        lat1, lon1, lat2, lon2 = map(math.radians, [lat1, lon1, lat2, lon2])
+        dlat, dlon = lat2 - lat1, lon2 - lon1
+        a = math.sin(dlat/2)**2 + math.cos(lat1)*math.cos(lat2)*math.sin(dlon/2)**2
+        return 2 * R * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+    
     nearby_users = []
     for location in nearby_locations:
-        distance = _haversine_km(
+        distance = calculate_distance(
             float(user_location_obj.latitude), float(user_location_obj.longitude),
             float(location.latitude), float(location.longitude)
         )
-        nearby_users.append(UserLocationResponse(
-            user_id=location.user.id,
-            username=location.user.username,
-            mj_instance_id=location.user.mj_instance_id,
-            latitude=float(location.latitude),
-            longitude=float(location.longitude),
-            distance_km=round(distance, 2)
-        ))
-
+        nearby_users.append({
+            "user_id": location.user.id,
+            "username": location.user.username,
+            "mj_instance_id": location.user.mj_instance_id,
+            "latitude": float(location.latitude),
+            "longitude": float(location.longitude),
+            "distance_km": round(distance, 2)
+        })
     
     return {
         "nearby_users": nearby_users,
@@ -333,7 +288,7 @@ async def get_map_users(
     current_user: User = Depends(get_authenticated_user),
     db: AsyncSession = Depends(get_db_session)
 ):
-    """Get all users visible on map"""
+    """🗺️ Get all users visible on the global map"""
     
     network_repo = MJNetworkRepository(db)
     visible_locations = await network_repo.locations.get_visible_locations(
@@ -342,13 +297,13 @@ async def get_map_users(
     
     map_users = []
     for location in visible_locations:
-        map_users.append(UserLocationResponse(
-            user_id=location.user.id,
-            username=location.user.username,
-            mj_instance_id=location.user.mj_instance_id,
-            latitude=float(location.latitude),
-            longitude=float(location.longitude)
-        ))
+        map_users.append({
+            "user_id": location.user.id,
+            "username": location.user.username,
+            "mj_instance_id": location.user.mj_instance_id,
+            "latitude": float(location.latitude),
+            "longitude": float(location.longitude),
+        })
     
     return {
         "map_users": map_users,
@@ -365,7 +320,7 @@ async def send_friend_request(
     current_user: User = Depends(get_authenticated_user),
     db: AsyncSession = Depends(get_db_session)
 ):
-    """Send friend request to another user"""
+    """👥 Send friend request to another user"""
     
     if request_data.to_user_id == current_user.id:
         raise HTTPException(
@@ -401,7 +356,7 @@ async def get_pending_friend_requests(
     current_user: User = Depends(get_authenticated_user),
     db: AsyncSession = Depends(get_db_session)
 ):
-    """Get pending friend requests for current user"""
+    """📋 Get pending friend requests for current user"""
     
     network_repo = MJNetworkRepository(db)
     pending_requests = await network_repo.friend_requests.get_pending_requests_for_user(current_user.id)
@@ -423,14 +378,13 @@ async def get_pending_friend_requests(
         "count": len(pending_requests)
     }
 
-
 @router.post("/friends/requests/respond")
 async def respond_to_friend_request(
     response_data: FriendRequestResponse,
     current_user: User = Depends(get_authenticated_user),
     db: AsyncSession = Depends(get_db_session)
 ):
-    """Accept or reject friend request"""
+    """✅ Accept or reject friend request"""
     
     friend_service = FriendManagementService(db)
     
@@ -471,55 +425,32 @@ async def get_friends(
     current_user: User = Depends(get_authenticated_user),
     db: AsyncSession = Depends(get_db_session)
 ):
-    """Get user's friends list"""
+    """👫 Get user's friends list"""
     
     network_repo = MJNetworkRepository(db)
     friends = await network_repo.relationships.get_user_friends(current_user.id)
     
     friends_list = []
     for friend in friends:
-        friends_list.append(FriendResponse(
-            id=friend.id,
-            friend_user_id=friend.friend_user_id,
-            friend_username=friend.friend.username,
-            friend_mj_instance_id=friend.friend.mj_instance_id,
-            relationship_type=friend.relationship_type,
-            status=friend.status,
-            trust_level=float(friend.trust_level),
-            last_interaction=friend.last_interaction,
-            can_respond_when_offline=friend.can_respond_when_offline
-        ))
+        friends_list.append({
+            "id": friend.id,
+            "friend_user_id": friend.friend_user_id,
+            "friend_username": friend.friend.username,
+            "friend_mj_instance_id": friend.friend.mj_instance_id,
+            "relationship_type": friend.relationship_type,
+            "status": friend.status,
+            "trust_level": float(friend.trust_level),
+            "last_interaction": friend.last_interaction,
+            "can_respond_when_offline": friend.can_respond_when_offline
+        })
     
     return {
         "friends": friends_list,
         "count": len(friends_list)
     }
 
-@router.put("/friends/privacy")
-async def update_privacy_settings(
-    privacy_data: PrivacySettingsUpdate,
-    current_user: User = Depends(get_authenticated_user),
-    db: AsyncSession = Depends(get_db_session)
-):
-    """Update privacy settings for a friend"""
-    
-    network_repo = MJNetworkRepository(db)
-    success = await network_repo.relationships.update_privacy_settings(
-        user_id=current_user.id,
-        friend_user_id=privacy_data.friend_user_id,
-        privacy_settings=privacy_data.privacy_settings
-    )
-    
-    if not success:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Relationship not found"
-        )
-    
-    return {"message": "Privacy settings updated successfully"}
-
 # =====================================================
-# 4. MJ-TO-MJ COMMUNICATION ENDPOINTS
+# 4. MJ-TO-MJ COMMUNICATION - THE CORE FEATURE! 🌐
 # =====================================================
 
 @router.post("/mj-talk")
@@ -529,7 +460,7 @@ async def initiate_mj_conversation(
     current_user: User = Depends(get_authenticated_user),
     db: AsyncSession = Depends(get_db_session)
 ):
-    """Initiate MJ-to-MJ conversation"""
+    """🤖 THE MAIN EVENT: Initiate MJ-to-MJ conversation!"""
     
     if talk_request.target_user_id == current_user.id:
         raise HTTPException(
@@ -547,22 +478,21 @@ async def initiate_mj_conversation(
             conversation_topic=talk_request.conversation_topic
         )
         
-        # Queue background task for message delivery if target is offline
+        # Queue background task for offline message delivery if needed
         if not result["target_user_online"]:
             background_tasks.add_task(
                 _queue_offline_message_safe,
                 result["message"].id,
                 talk_request.target_user_id
             )
-
         
         return {
-            "message": "MJ conversation initiated",
+            "message": "MJ conversation initiated successfully!",
             "conversation_id": result["conversation"].id,
             "message_id": result["message"].id,
             "target_user_online": result["target_user_online"],
-            "response_content": result["message"].message_content,
-            "tokens_used": result["message"].tokens_used
+            "response_content": result["response_content"],
+            "tokens_used": result["tokens_used"]
         }
         
     except ValueError as e:
@@ -576,7 +506,7 @@ async def get_mj_conversations(
     current_user: User = Depends(get_authenticated_user),
     db: AsyncSession = Depends(get_db_session)
 ):
-    """Get user's MJ conversations"""
+    """💬 Get user's MJ conversations"""
     
     network_repo = MJNetworkRepository(db)
     conversations = await network_repo.conversations.get_user_conversations(current_user.id)
@@ -585,17 +515,17 @@ async def get_mj_conversations(
     for conv in conversations:
         other_user = conv.user_b if conv.user_a_id == current_user.id else conv.user_a
         
-        conversations_list.append(ConversationResponse(
-            id=conv.id,
-            user_a_id=conv.user_a_id,
-            user_b_id=conv.user_b_id,
-            user_a_username=conv.user_a.username,
-            user_b_username=conv.user_b.username,
-            conversation_topic=conv.conversation_topic,
-            status=conv.status,
-            last_message_at=conv.last_message_at,
-            message_count=conv.message_count
-        ))
+        conversations_list.append({
+            "id": conv.id,
+            "user_a_id": conv.user_a_id,
+            "user_b_id": conv.user_b_id,
+            "user_a_username": conv.user_a.username,
+            "user_b_username": conv.user_b.username,
+            "conversation_topic": conv.conversation_topic,
+            "status": conv.status,
+            "last_message_at": conv.last_message_at,
+            "message_count": conv.message_count
+        })
     
     return {
         "conversations": conversations_list,
@@ -610,7 +540,7 @@ async def get_conversation_messages(
     current_user: User = Depends(get_authenticated_user),
     db: AsyncSession = Depends(get_db_session)
 ):
-    """Get messages for a conversation"""
+    """📜 Get messages for a conversation"""
     
     network_repo = MJNetworkRepository(db)
     
@@ -630,18 +560,18 @@ async def get_conversation_messages(
     
     messages_list = []
     for message in messages:
-        messages_list.append(MessageResponse(
-            id=message.id,
-            from_user_id=message.from_user_id,
-            to_user_id=message.to_user_id,
-            from_username=message.from_user.username,
-            to_username=message.to_user.username,
-            message_content=message.message_content,
-            message_type=message.message_type,
-            delivery_status=message.delivery_status,
-            created_at=message.created_at,
-            tokens_used=message.tokens_used
-        ))
+        messages_list.append({
+            "id": message.id,
+            "from_user_id": message.from_user_id,
+            "to_user_id": message.to_user_id,
+            "from_username": message.from_user.username,
+            "to_username": message.to_user.username,
+            "message_content": message.message_content,
+            "message_type": message.message_type,
+            "delivery_status": message.delivery_status,
+            "created_at": message.created_at,
+            "tokens_used": message.tokens_used
+        })
     
     return {
         "messages": messages_list,
@@ -649,64 +579,34 @@ async def get_conversation_messages(
         "conversation_id": conversation_id
     }
 
-@router.get("/messages/pending")
-async def get_pending_messages(
+@router.post("/status-update")
+async def send_status_update(
+    status_data: StatusUpdateRequest,
+    background_tasks: BackgroundTasks,
     current_user: User = Depends(get_authenticated_user),
     db: AsyncSession = Depends(get_db_session)
 ):
-    """Get pending messages for current user"""
+    """📢 Send status update to friends"""
     
-    network_repo = MJNetworkRepository(db)
-    pending_messages = await network_repo.pending_messages.get_pending_for_user(current_user.id)
+    communication_service = MJCommunicationService(db)
     
-    return {
-        "pending_messages": [
-            {
-                "id": pm.id,
-                "message_id": pm.message_id,
-                "recipient_user_id": pm.recipient_user_id,
-                "status": pm.status,
-                "queued_at": pm.queued_at,
-                "delivered_at": pm.delivered_at,
-                "expires_at": pm.expires_at,
-                "last_error": pm.last_error,
-            }
-            for pm in pending_messages
-        ],
-        "count": len(pending_messages)
-    }
-
-
-@router.post("/messages/{message_id}/mark-read")
-async def mark_message_as_read(
-    message_id: int,
-    current_user: User = Depends(get_authenticated_user),
-    db: AsyncSession = Depends(get_db_session)
-):
-    """Mark message as read"""
-    
-    network_repo = MJNetworkRepository(db)
-    
-    # Verify message belongs to current user
-    message = await network_repo.messages.get_by_id(message_id)
-    if not message or message.to_user_id != current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Message not found or access denied"
+    try:
+        result = await communication_service.send_status_update(
+            from_user_id=current_user.id,
+            status_message=status_data.status_message,
+            target_users=status_data.target_users
         )
-    
-    success = await network_repo.messages.mark_as_read(message_id)
-    
-    if not success:
+        
+        return result
+        
+    except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to mark message as read"
+            detail=f"Failed to send status update: {str(e)}"
         )
-    
-    return {"message": "Message marked as read"}
 
 # =====================================================
-# 5. SCHEDULED CHECKINS ENDPOINTS
+# 5. SCHEDULED CHECKINS & AUTOMATION
 # =====================================================
 
 @router.post("/checkins")
@@ -715,15 +615,15 @@ async def create_scheduled_checkin(
     current_user: User = Depends(get_authenticated_user),
     db: AsyncSession = Depends(get_db_session)
 ):
-    """Create scheduled check-in"""
-    
-    from datetime import datetime, time, timedelta
+    """📅 Create scheduled check-in"""
     
     if checkin_data.target_user_id == current_user.id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Cannot create check-in with yourself"
         )
+    
+    from datetime import datetime, time, timedelta
     
     # Calculate next check-in time
     now = datetime.utcnow()
@@ -774,7 +674,7 @@ async def get_scheduled_checkins(
     current_user: User = Depends(get_authenticated_user),
     db: AsyncSession = Depends(get_db_session)
 ):
-    """Get user's scheduled check-ins"""
+    """📋 Get user's scheduled check-ins"""
     
     network_repo = MJNetworkRepository(db)
     
@@ -785,122 +685,37 @@ async def get_scheduled_checkins(
     received_checkins = await network_repo.checkins.get_received_checkins(current_user.id)
     
     return {
-        "created_checkins": user_checkins,
-        "received_checkins": received_checkins,
+        "created_checkins": [
+            {
+                "id": c.id,
+                "target_user_id": c.target_user_id,
+                "target_username": c.target_user.username,
+                "checkin_name": c.checkin_name,
+                "frequency_type": c.frequency_type,
+                "checkin_message": c.checkin_message,
+                "is_active": c.is_active,
+                "next_checkin_at": c.next_checkin_at
+            } for c in user_checkins
+        ],
+        "received_checkins": [
+            {
+                "id": c.id,
+                "from_user_id": c.user_id,
+                "from_username": c.user.username,
+                "checkin_name": c.checkin_name,
+                "frequency_type": c.frequency_type,
+                "checkin_message": c.checkin_message,
+                "is_active": c.is_active,
+                "next_checkin_at": c.next_checkin_at
+            } for c in received_checkins
+        ],
         "created_count": len(user_checkins),
         "received_count": len(received_checkins)
     }
 
-@router.put("/checkins/{checkin_id}/toggle")
-async def toggle_checkin_status(
-    checkin_id: int,
-    current_user: User = Depends(get_authenticated_user),
-    db: AsyncSession = Depends(get_db_session)
-):
-    """Toggle check-in active/inactive status"""
-    
-    network_repo = MJNetworkRepository(db)
-    
-    checkin = await network_repo.checkins.get_by_id(checkin_id)
-    if not checkin or checkin.user_id != current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Check-in not found or access denied"
-        )
-    
-    new_status = not checkin.is_active
-    await network_repo.checkins.update(checkin_id, {"is_active": new_status})
-    
-    return {
-        "message": f"Check-in {'activated' if new_status else 'deactivated'}",
-        "is_active": new_status
-    }
-
-@router.delete("/checkins/{checkin_id}")
-async def delete_scheduled_checkin(
-    checkin_id: int,
-    current_user: User = Depends(get_authenticated_user),
-    db: AsyncSession = Depends(get_db_session)
-):
-    """Delete scheduled check-in"""
-    
-    network_repo = MJNetworkRepository(db)
-    
-    checkin = await network_repo.checkins.get_by_id(checkin_id)
-    if not checkin or checkin.user_id != current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Check-in not found or access denied"
-        )
-    
-    await network_repo.checkins.delete(checkin_id)
-    
-    return {"message": "Scheduled check-in deleted successfully"}
-
 # =====================================================
-# 6. ADMIN & UTILITY ENDPOINTS
+# 6. SEARCH & UTILITIES
 # =====================================================
-
-@router.get("/network/stats")
-async def get_network_stats(
-    current_user: User = Depends(get_authenticated_user),
-    db: AsyncSession = Depends(get_db_session)
-):
-    """Get comprehensive network statistics"""
-    
-    network_repo = MJNetworkRepository(db)
-    network_data = await network_repo.get_complete_user_network_data(current_user.id)
-    
-    # Calculate additional stats
-    total_friends = len(network_data["friends"])
-    active_conversations = len([c for c in network_data["conversations"] if c.status == "active"])
-    total_messages_in_conversations = sum(c.message_count for c in network_data["conversations"])
-    
-    # Get online friends count
-    online_friends = 0
-    for friend in network_data["friends"]:
-        friend_registry = await network_repo.mj_registry.get_by_user_id(friend.friend_user_id)
-        if friend_registry and friend_registry.status == "online":
-            online_friends += 1
-    
-    return {
-        "user_stats": {
-            "total_friends": total_friends,
-            "online_friends": online_friends,
-            "active_conversations": active_conversations,
-            "total_mj_messages": total_messages_in_conversations,
-            "pending_messages": len(network_data["pending_messages"]),
-            "scheduled_checkins": len(network_data["scheduled_checkins"]),
-            "location_enabled": network_data["location"] is not None
-        },
-        "mj_registry": network_data["mj_registry"],
-        "recent_activity": {
-            "last_conversation": network_data["conversations"][0].last_message_at if network_data["conversations"] else None,
-            "last_friend_added": max([f.created_at for f in network_data["friends"]], default=None),
-            "last_location_update": network_data["location"].created_at if network_data["location"] else None
-        }
-    }
-
-@router.post("/network/cleanup")
-async def cleanup_network_data(
-    current_user: User = Depends(get_authenticated_user),
-    db: AsyncSession = Depends(get_db_session)
-):
-    """Cleanup expired network data"""
-    
-    network_repo = MJNetworkRepository(db)
-    
-    # Cleanup expired friend requests
-    expired_requests = await network_repo.friend_requests.expire_old_requests()
-    
-    # Cleanup expired locations
-    expired_locations = await network_repo.locations.cleanup_expired_locations()
-    
-    return {
-        "message": "Network cleanup completed",
-        "expired_friend_requests": expired_requests,
-        "expired_locations": expired_locations
-    }
 
 @router.get("/search/users")
 async def search_users(
@@ -909,9 +724,7 @@ async def search_users(
     current_user: User = Depends(get_authenticated_user),
     db: AsyncSession = Depends(get_db_session)
 ):
-    """Search for users by username or MJ instance ID"""
-    
-    from ...database.repositories.user import UserRepository
+    """🔍 Search for users by username or MJ instance ID"""
     
     if len(query.strip()) < 2:
         raise HTTPException(
@@ -919,24 +732,25 @@ async def search_users(
             detail="Search query must be at least 2 characters"
         )
     
-    user_repo = UserRepository(db)
+    from sqlalchemy import select, and_, or_
+    from ...models.database.user import User as UserModel
     
     # Search by username or MJ instance ID
     result = await db.execute(
-        select(User).where(
+        select(UserModel).where(
             and_(
                 or_(
-                    User.username.ilike(f"%{query}%"),
-                    User.mj_instance_id.ilike(f"%{query}%")
+                    UserModel.username.ilike(f"%{query}%"),
+                    UserModel.mj_instance_id.ilike(f"%{query}%")
                 ),
-                User.id != current_user.id  # Exclude current user
+                UserModel.id != current_user.id  # Exclude current user
             )
         ).limit(limit)
     )
     
     users = result.scalars().all()
     
-    # Check which users are already friends
+    # Check friendship status for each user
     network_repo = MJNetworkRepository(db)
     search_results = []
     
@@ -961,4 +775,44 @@ async def search_users(
         "search_results": search_results,
         "count": len(search_results),
         "query": query
+    }
+
+@router.get("/network/stats")
+async def get_comprehensive_network_stats(
+    current_user: User = Depends(get_authenticated_user),
+    db: AsyncSession = Depends(get_db_session)
+):
+    """📊 Get comprehensive network statistics"""
+    
+    network_repo = MJNetworkRepository(db)
+    network_data = await network_repo.get_complete_user_network_data(current_user.id)
+    
+    # Calculate stats
+    total_friends = len(network_data["friends"])
+    active_conversations = len([c for c in network_data["conversations"] if c.status == "active"])
+    total_messages = sum(c.message_count for c in network_data["conversations"])
+    
+    # Get online friends count
+    online_friends = 0
+    for friend in network_data["friends"]:
+        friend_registry = await network_repo.mj_registry.get_by_user_id(friend.friend_user_id)
+        if friend_registry and friend_registry.status == "online":
+            online_friends += 1
+    
+    return {
+        "user_stats": {
+            "total_friends": total_friends,
+            "online_friends": online_friends,
+            "active_conversations": active_conversations,
+            "total_mj_messages": total_messages,
+            "pending_messages": len(network_data["pending_messages"]),
+            "scheduled_checkins": len(network_data["scheduled_checkins"]),
+            "location_enabled": network_data["location"] is not None
+        },
+        "mj_registry": network_data["mj_registry"],
+        "recent_activity": {
+            "last_conversation": network_data["conversations"][0].last_message_at if network_data["conversations"] else None,
+            "last_friend_added": max([f.created_at for f in network_data["friends"]], default=None),
+            "last_location_update": network_data["location"].created_at if network_data["location"] else None
+        }
     }

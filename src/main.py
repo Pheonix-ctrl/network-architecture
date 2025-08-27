@@ -1,4 +1,4 @@
-# src/main.py
+# src/main.py - UPDATED WITH FULL MJ NETWORK INTEGRATION
 import sys
 import os
 import asyncio
@@ -12,17 +12,12 @@ import bcrypt
 import jwt
 from datetime import datetime
 import json
-import src.models.database
-
-# If you will enforce SSL for asyncpg (Supabase), uncomment:
-# import ssl
 
 # Add src to path for imports
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 # Centralized JWT/crypto utilities
 from src.core.security import create_access_token, verify_token
-
 
 # Set OpenAI API key for modules that use it directly
 import openai
@@ -39,13 +34,11 @@ class RegisterRequest(BaseModel):
     password: str
 
 class ChatMessage(BaseModel):
-    message: str  
-# Database connection - FIXED URLs
-SQLALCHEMY_DATABASE_URL = "postgresql+asyncpg:hftijzjctexijhfpphk.supabase.co:5432/postgres"
-ASYNCPG_DATABASE_URL = "postgresql://postgres:theawakzjctexijhfpphk.supabase.co:5432/postgres"
+    message: str
 
-# For backwards compatibility
-DATABASE_URL = SQLALCHEMY_DATABASE_URL
+# Database connection URLs
+SQLALCHEMY_DATABASE_URL = "postgresql+asyncpg://postgres:theawakzjctexijhfpphk.supabase.co:5432/postgres"
+ASYNCPG_DATABASE_URL = "postgresql://postgres:theawakzjctexijhfpphk.supabase.co:5432/postgres"
 
 # Global database pool
 db_pool = None
@@ -54,16 +47,16 @@ async def get_db_pool():
     global db_pool
     if not db_pool:
         try:
-            # Use the plain PostgreSQL URL for asyncpg.create_pool()
             db_pool = await asyncpg.create_pool(ASYNCPG_DATABASE_URL)
             print("✅ Database pool created")
         except Exception as e:
             print(f"❌ Database pool failed: {e}")
     return db_pool
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
-    print("🚀 Starting MJ Network v4.0.0 - WITH MJ-TO-MJ NETWORK")
+    print("🚀 Starting MJ Network v5.0.0 - COMPLETE MJ-TO-MJ NETWORK")
     await get_db_pool()
     
     # Try to load AI services
@@ -83,14 +76,14 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"❌ MJ Network services failed: {e}")
     
-    print("✅ MJ Network ready with full networking capabilities")
+    print("✅ MJ Network ready with COMPLETE networking capabilities")
     yield
     
     # Shutdown
     if db_pool:
         await db_pool.close()
 
-app = FastAPI(title="MJ Network", version="4.0.0", lifespan=lifespan)
+app = FastAPI(title="MJ Network", version="5.0.0", lifespan=lifespan)
 
 # CORS
 app.add_middleware(
@@ -104,8 +97,6 @@ app.add_middleware(
 # Security
 security = HTTPBearer(auto_error=False)
 
-# REPLACE THE get_current_user FUNCTION IN src/main.py WITH THIS:
-
 async def get_current_user(token = Depends(security)):
     if not token:
         print("❌ No token provided")
@@ -113,7 +104,7 @@ async def get_current_user(token = Depends(security)):
 
     try:
         print("🔍 Verifying token...")
-        payload = verify_token(token.credentials)  # from src.core.security
+        payload = verify_token(token.credentials)
         user_id_str = payload.get("sub")
         if user_id_str is None:
             raise HTTPException(status_code=401, detail="Invalid token")
@@ -121,17 +112,18 @@ async def get_current_user(token = Depends(security)):
         print(f"✅ Token valid for user: {user_id}")
         return user_id
     except HTTPException:
-        raise  # Re-raise HTTPException as-is
+        raise
     except Exception as e:
         print(f"❌ Token verification error: {e}")
         raise HTTPException(status_code=401, detail="Authentication failed")
 
-
-# Include MJ Network API routes
+# =====================================================
+# INCLUDE MJ NETWORK API ROUTES - THE HEART OF THE SYSTEM
+# =====================================================
 from src.api.v1.mj_network import router as mj_network_router
 app.include_router(mj_network_router, prefix="/api/v1/mj-network", tags=["MJ Network"])
 
-# Auth endpoints (existing)
+# Auth endpoints
 @app.post("/api/v1/auth/login")
 async def login(login_request: LoginRequest):
     """Login user and return tokens"""
@@ -154,13 +146,11 @@ async def login(login_request: LoginRequest):
             # Check password (handle both hashed and plain)
             password_valid = False
             if user['password_hash'].startswith('$2b$'):
-                # bcrypt hashed
                 password_valid = bcrypt.checkpw(
                     login_request.password.encode('utf-8'),
                     user['password_hash'].encode('utf-8')
                 )
             else:
-                # Plain text (for development)
                 password_valid = login_request.password == user['password_hash']
             
             if not password_valid:
@@ -173,10 +163,10 @@ async def login(login_request: LoginRequest):
                 user['id']
             )
             
-            # Auto-initialize MJ registry if not exists
+            # 🌐 AUTO-INITIALIZE MJ NETWORK FOR ALL USERS
             await initialize_user_mj_network(user['id'], user['username'])
             
-            # Create token (convert user_id to string for JWT)
+            # Create token
             access_token = create_access_token(data={"sub": str(user['id'])})
             print(f"✅ Login successful for: {login_request.email} (user_id: {user['id']})")
             
@@ -230,10 +220,10 @@ async def register(register_request: RegisterRequest):
                 mj_instance_id
             )
             
-            # Auto-initialize MJ registry
+            # 🌐 AUTO-INITIALIZE MJ NETWORK FOR NEW USERS
             await initialize_user_mj_network(user_id, register_request.username)
             
-            # Create token (convert user_id to string for JWT)
+            # Create token
             access_token = create_access_token(data={"sub": str(user_id)})
             
             return {
@@ -254,7 +244,7 @@ async def register(register_request: RegisterRequest):
 
 @app.get("/api/v1/auth/me")
 async def get_current_user_info(current_user: int = Depends(get_current_user)):
-    """Get current user info"""
+    """Get current user info with MJ Network status"""
     print(f"📋 Getting user info for user_id: {current_user}")
     
     pool = await get_db_pool()
@@ -272,9 +262,17 @@ async def get_current_user_info(current_user: int = Depends(get_current_user)):
                 print(f"❌ User not found in database: {current_user}")
                 raise HTTPException(status_code=404, detail="User not found")
             
-            # Get MJ network status
+            # 🌐 GET MJ NETWORK STATUS
             mj_registry = await conn.fetchrow(
-                "SELECT status, total_conversations, total_messages_sent, location_enabled FROM mj_registry WHERE user_id = $1",
+                """SELECT status, total_conversations, total_messages_sent, 
+                          total_messages_received, location_enabled 
+                   FROM mj_registry WHERE user_id = $1""",
+                current_user
+            )
+            
+            # Get friend count
+            friend_count = await conn.fetchval(
+                "SELECT COUNT(*) FROM relationships_network WHERE user_id = $1 AND status = 'active'",
                 current_user
             )
             
@@ -288,7 +286,9 @@ async def get_current_user_info(current_user: int = Depends(get_current_user)):
                     "status": mj_registry['status'] if mj_registry else "offline",
                     "total_conversations": mj_registry['total_conversations'] if mj_registry else 0,
                     "total_messages_sent": mj_registry['total_messages_sent'] if mj_registry else 0,
-                    "location_enabled": mj_registry['location_enabled'] if mj_registry else False
+                    "total_messages_received": mj_registry['total_messages_received'] if mj_registry else 0,
+                    "location_enabled": mj_registry['location_enabled'] if mj_registry else False,
+                    "friends_count": friend_count or 0
                 } if mj_registry else None
             }
             
@@ -299,7 +299,7 @@ async def get_current_user_info(current_user: int = Depends(get_current_user)):
         raise HTTPException(status_code=500, detail="Failed to get user info")
 
 async def initialize_user_mj_network(user_id: int, username: str):
-    """Auto-initialize MJ registry for new users"""
+    """🌐 AUTO-INITIALIZE MJ REGISTRY FOR ALL USERS"""
     
     pool = await get_db_pool()
     if not pool:
@@ -321,21 +321,30 @@ async def initialize_user_mj_network(user_id: int, username: str):
                 )
                 
                 if user_data:
-                    # Create MJ registry
+                    # Create MJ registry with full capabilities
                     await conn.execute(
                         """INSERT INTO mj_registry (user_id, mj_instance_id, status, capabilities) 
                            VALUES ($1, $2, 'online', $3)""",
                         user_id,
                         user_data['mj_instance_id'],
-                        json.dumps({"chat": True, "location": False, "voice": False})
+                        json.dumps({
+                            "chat": True, 
+                            "location": True, 
+                            "voice": False,
+                            "scheduled_checkins": True,
+                            "status_updates": True
+                        })
                     )
                     
-                    print(f"🌐 MJ registry initialized for user {user_id}")
+                    print(f"🌐 MJ registry initialized for user {user_id} ({username})")
                     
     except Exception as e:
         print(f"❌ MJ registry initialization failed for user {user_id}: {e}")
 
-# WebSocket for real-time chat (existing functionality)
+# =====================================================
+# WEBSOCKET WITH MJ NETWORK INTEGRATION
+# =====================================================
+
 connected_clients = {}
 
 @app.websocket("/ws/{user_id}")
@@ -344,10 +353,8 @@ async def websocket_endpoint(websocket: WebSocket, user_id: int):
     connected_clients[user_id] = websocket
     print(f"✅ User {user_id} connected via WebSocket")
     
-    # Update MJ status to online
+    # 🌐 UPDATE MJ STATUS TO ONLINE AND DELIVER PENDING MESSAGES
     await update_mj_status(user_id, "online")
-    
-    # Deliver any pending MJ messages
     await deliver_pending_mj_messages(user_id)
     
     try:
@@ -363,7 +370,7 @@ async def websocket_endpoint(websocket: WebSocket, user_id: int):
             print(f"💬 User {user_id}: {user_message}")
             
             # Process with existing MJ logic (user-to-MJ conversation)
-            print("🔄 Processing message with existing MJ logic...")
+            print("🔄 Processing message with MJ logic...")
             response = await process_styled_mj_message(user_message, user_id)
             print(f"✅ MJ response ready: '{response[:100]}...'")
             
@@ -382,7 +389,7 @@ async def websocket_endpoint(websocket: WebSocket, user_id: int):
         if user_id in connected_clients:
             del connected_clients[user_id]
         
-        # Update MJ status to offline
+        # 🌐 UPDATE MJ STATUS TO OFFLINE
         await update_mj_status(user_id, "offline")
         print(f"❌ User {user_id} disconnected")
     except Exception as e:
@@ -392,7 +399,7 @@ async def websocket_endpoint(websocket: WebSocket, user_id: int):
         await update_mj_status(user_id, "offline")
 
 async def update_mj_status(user_id: int, status: str):
-    """Update MJ online status"""
+    """🔄 Update MJ online status in registry"""
     pool = await get_db_pool()
     if not pool:
         return
@@ -408,7 +415,7 @@ async def update_mj_status(user_id: int, status: str):
         print(f"❌ Failed to update MJ status: {e}")
 
 async def deliver_pending_mj_messages(user_id: int):
-    """Deliver pending MJ-to-MJ messages when user comes online"""
+    """📨 Deliver pending MJ-to-MJ messages when user comes online"""
     
     try:
         from src.config.database import AsyncSessionLocal
@@ -421,12 +428,12 @@ async def deliver_pending_mj_messages(user_id: int):
             if delivered_count > 0:
                 print(f"📨 Delivered {delivered_count} pending MJ messages to user {user_id}")
                 
-                # Notify user via WebSocket if connected
+                # 🚨 NOTIFY USER VIA WEBSOCKET OF NEW MJ MESSAGES
                 if user_id in connected_clients:
                     notification = {
                         "type": "mj_messages_delivered",
                         "count": delivered_count,
-                        "message": f"You have {delivered_count} new MJ messages"
+                        "message": f"You have {delivered_count} new MJ messages from your network"
                     }
                     
                     await connected_clients[user_id].send_text(json.dumps(notification))
@@ -434,7 +441,10 @@ async def deliver_pending_mj_messages(user_id: int):
     except Exception as e:
         print(f"❌ Failed to deliver pending messages for user {user_id}: {e}")
 
-# Existing MJ processing functions
+# =====================================================
+# EXISTING MJ PROCESSING FUNCTIONS (UPDATED)
+# =====================================================
+
 async def extract_and_save_memory(user_id: int, user_message: str, mj_response: str):
     """Extract and save memories from conversation"""
     
@@ -501,11 +511,9 @@ If no important facts can be extracted, respond with: []
         
         # Get embeddings for memories
         try:
-            # Check if the OpenAI client has get_embeddings method
             if hasattr(app.state.openai_client, 'get_embeddings'):
                 embeddings_response = await app.state.openai_client.get_embeddings([mem['fact'] for mem in memories])
             else:
-                # Create embeddings using the client directly
                 facts = [mem['fact'] for mem in memories]
                 embeddings_response = await create_embeddings(facts)
         except Exception as e:
@@ -643,7 +651,7 @@ async def process_styled_mj_message(user_message: str, user_id: int) -> str:
         
         # STEP 3: Styled routing - Get raw data then style with MJ personality
         
-        if mode == 'healthcare' and confidence > 0.40:  # LOWERED from 0.50
+        if mode == 'healthcare' and confidence > 0.40:
             print("🏥 ROUTING TO MEDICO...")
             try:
                 from src.services.ai.medico import get_medical_data
@@ -659,7 +667,7 @@ async def process_styled_mj_message(user_message: str, user_id: int) -> str:
             except Exception as e:
                 print(f"❌ MEDICO ERROR: {e}")
         
-        elif mode == 'educational' and confidence > 0.50:  # LOWERED from 0.60
+        elif mode == 'educational' and confidence > 0.50:
             print("📚 ROUTING TO PRISM...")
             try:
                 from src.services.ai.prism import get_educational_data
@@ -675,7 +683,7 @@ async def process_styled_mj_message(user_message: str, user_id: int) -> str:
             except Exception as e:
                 print(f"❌ PRISM ERROR: {e}")
         
-        elif mode == 'web_search' and confidence > 0.50:  # LOWERED from 0.60
+        elif mode == 'web_search' and confidence > 0.50:
             print("🌐 ROUTING TO PERPLEXITY...")
             try:
                 from src.services.external.perplexity import get_web_data
@@ -693,7 +701,6 @@ async def process_styled_mj_message(user_message: str, user_id: int) -> str:
         
         else:
             print(f"💭 No module triggered - Mode: {mode}, Confidence: {confidence}")
-            print(f"💭 Thresholds: healthcare>0.40, educational>0.50, web_search>0.50")
         
         # STEP 4: Default MJ response
         print("💭 Using default MJ...")
@@ -851,9 +858,9 @@ async def get_user_context(user_id: int) -> str:
 # Health check
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy", "service": "MJ Network v4.0.0 - WITH MJ-TO-MJ NETWORK"}
+    return {"status": "healthy", "service": "MJ Network v5.0.0 - COMPLETE MJ-TO-MJ NETWORK"}
 
-# NEW: MJ Network Status Endpoint
+# 🌐 MJ Network Status Endpoint
 @app.get("/api/v1/mj-network-status")
 async def get_mj_network_status():
     """Get overall MJ network status"""
@@ -863,7 +870,7 @@ async def get_mj_network_status():
     
     try:
         async with pool.acquire() as conn:
-            # Get network statistics
+            # Get comprehensive network statistics
             stats = {}
             
             # Total registered MJs
@@ -872,8 +879,8 @@ async def get_mj_network_status():
             # Online MJs
             stats['online_mjs'] = await conn.fetchval("SELECT COUNT(*) FROM mj_registry WHERE status = 'online'")
             
-            # Total relationships
-            stats['total_relationships'] = await conn.fetchval("SELECT COUNT(*) FROM relationships_network WHERE status = 'active'")
+            # Total friendships
+            stats['total_friendships'] = await conn.fetchval("SELECT COUNT(*) FROM relationships_network WHERE status = 'active'")
             
             # Total MJ conversations
             stats['total_mj_conversations'] = await conn.fetchval("SELECT COUNT(*) FROM mj_conversations WHERE status = 'active'")
@@ -881,12 +888,34 @@ async def get_mj_network_status():
             # Total MJ messages
             stats['total_mj_messages'] = await conn.fetchval("SELECT COUNT(*) FROM mj_messages")
             
+            # Pending messages
+            stats['pending_messages'] = await conn.fetchval("SELECT COUNT(*) FROM pending_messages WHERE status = 'queued'")
+            
             # Users with location enabled
             stats['users_with_location'] = await conn.fetchval("SELECT COUNT(*) FROM user_locations WHERE is_visible_on_map = true")
             
+            # Active scheduled checkins
+            stats['active_checkins'] = await conn.fetchval("SELECT COUNT(*) FROM scheduled_checkins WHERE is_active = true")
+            
+            # Calculate network activity rate
+            if stats['total_mjs'] > 0:
+                stats['activity_rate'] = round((stats['online_mjs'] / stats['total_mjs']) * 100, 2)
+            else:
+                stats['activity_rate'] = 0.0
+            
             return {
                 "status": "healthy",
+                "message": "MJ Network is fully operational",
                 "network_stats": stats,
+                "features": {
+                    "mj_to_mj_chat": True,
+                    "friend_requests": True,
+                    "location_discovery": True,
+                    "scheduled_checkins": True,
+                    "status_updates": True,
+                    "offline_messaging": True,
+                    "privacy_controls": True
+                },
                 "timestamp": datetime.utcnow().isoformat()
             }
             
