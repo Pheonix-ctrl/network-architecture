@@ -105,7 +105,6 @@ class MemoryManager:
             existing_memory = similar_memories[0]
             existing_memory.confidence = memory_data.confidence
             existing_memory.access_count += 1
-            existing_memory.last_accessed = datetime.utcnow()
             await self.memory_repo.update(existing_memory)
             
             # Invalidate cache
@@ -182,7 +181,7 @@ class MemoryManager:
                     category=memory_data.get('category', 'general'),
                     confidence=memory_data['confidence'],
                     importance=memory_data.get('importance', 0.5),
-                    relevance_tags=memory_data.get('relevance_tags', [])
+                    tags=memory_data.get('tags', [])
                 )
                 
                 await self.create_memory(

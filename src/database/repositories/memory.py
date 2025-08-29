@@ -79,10 +79,9 @@ class MemoryRepository(BaseRepository[Memory]):
                     "category": row.category,
                     "confidence": row.confidence,
                     "importance": row.importance,
-                    "relevance_tags": [],  # Default empty list since column doesn't exist
+                    "tags": [],  # Default empty list since column doesn't exist
                     "access_count": row.access_count,
                     "created_at": row.created_at,
-                    "last_accessed": row.created_at,  # Use created_at since last_accessed doesn't exist
                     "is_validated": row.is_validated
                 }
                 # Add similarity score
@@ -114,7 +113,6 @@ class MemoryRepository(BaseRepository[Memory]):
         if category:
             query = query.where(Memory.category == category)
         
-        query = query.order_by(desc(Memory.last_accessed), desc(Memory.confidence))
         query = query.limit(limit).offset(offset)
         
         result = await self.db.execute(query)
@@ -136,7 +134,6 @@ class MemoryRepository(BaseRepository[Memory]):
             .where(Memory.id == memory_id)
             .values(
                 access_count=Memory.access_count + 1,
-                last_accessed=datetime.utcnow()
             )
         )
         await self.db.commit()

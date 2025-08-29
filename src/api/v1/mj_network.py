@@ -35,6 +35,13 @@ class LocationUpdate(BaseModel):
     accuracy_meters: Optional[int] = None
     is_visible_on_map: bool = True
 
+class DraftApprovalRequest(BaseModel):
+    message_id: int
+
+class DraftEditRequest(BaseModel):
+    message_id: int
+    new_content: str
+
 class FriendRequestCreate(BaseModel):
     to_user_id: int
     request_message: Optional[str] = None
@@ -430,6 +437,175 @@ async def respond_to_friend_request(
             detail=str(e)
         )
 
+@router.get("/drafts/pending")
+async def get_pending_draft_responses(
+    current_user: User = Depends(get_authenticated_user),
+    db: AsyncSession = Depends(get_db_session)
+):
+    """📝 Get all draft responses awaiting user approval"""
+    
+    communication_service = MJCommunicationService(db)
+    
+    try:
+        pending_responses = await communication_service.get_pending_responses(current_user.id)
+        
+        return {
+            "pending_responses": pending_responses,
+            "count": len(pending_responses),
+            "message": f"Found {len(pending_responses)} pending draft responses"
+        }
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve pending responses: {str(e)}"
+        )
+
+@router.post("/drafts/approve")
+async def approve_draft_response(
+    approval_request: DraftApprovalRequest,
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_authenticated_user),
+    db: AsyncSession = Depends(get_db_session)
+):
+    """✅ Approve and send a draft response"""
+    
+    communication_service = MJCommunicationService(db)
+    
+    try:
+        result = await communication_service.approve_mj_response(
+            message_id=approval_request.message_id,
+            user_id=current_user.id
+        )
+        
+        # Add background task for offline message delivery if needed
+        # Add background task for offline message delivery if needed
+        if not result["delivered"]:
+            network_repo = MJNetworkRepository(db)
+            message = await network_repo.messages.get_by_id(approval_request.message_id)
+            if message:
+                background_tasks.add_task(
+                    _queue_offline_message_safe,
+                    approval_request.message_id,
+                    message.to_user_id
+                )
+        
+        return {
+            "message": "Draft response approved and sent successfully",
+            "message_id": approval_request.message_id,
+            "sent": result["sent"],
+            "delivered": result["delivered"],
+            "conversation_id": result["message"].conversation_id
+        }
+        
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to approve draft: {str(e)}"
+        )
+
+@router.put("/drafts/edit-approve")
+async def edit_and_approve_draft(
+    edit_request: DraftEditRequest,
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_authenticated_user),
+    db: AsyncSession = Depends(get_db_session)
+):
+    """✏️ Edit draft content and then approve/send it"""
+    
+    communication_service = MJCommunicationService(db)
+    
+    try:
+        result = await communication_service.edit_and_approve_response(
+            message_id=edit_request.message_id,
+            user_id=current_user.id,
+            new_content=edit_request.new_content
+        )
+        
+        # Add background task for offline message delivery if needed
+        # Add background task for offline message delivery if needed
+        if not result["delivered"]:
+            network_repo = MJNetworkRepository(db)
+            message = await network_repo.messages.get_by_id(edit_request.message_id)
+            if message:
+                background_tasks.add_task(
+                    _queue_offline_message_safe,
+                    edit_request.message_id,
+                    message.to_user_id
+                )
+        
+        return {
+            "message": "Draft response edited and sent successfully",
+            "message_id": edit_request.message_id,
+            "new_content": edit_request.new_content,
+            "sent": result["sent"],
+            "delivered": result["delivered"]
+        }
+        
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to edit and approve draft: {str(e)}"
+        )
+
+@router.delete("/drafts/{message_id}")
+async def delete_draft_response(
+    message_id: int,
+    current_user: User = Depends(get_authenticated_user),
+    db: AsyncSession = Depends(get_db_session)
+):
+    """🗑️ Delete a draft response without sending"""
+    
+    network_repo = MJNetworkRepository(db)
+    
+    try:
+        # Get the draft message
+        message = await network_repo.messages.get_by_id(message_id)
+        if not message:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Message not found"
+            )
+        
+        if message.from_user_id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You can only delete your own draft responses"
+            )
+        
+        if message.approval_status != "draft":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Can only delete draft messages"
+            )
+        
+        # Delete the draft message
+        await network_repo.messages.delete(message_id)
+        
+        return {
+            "message": "Draft response deleted successfully",
+            "deleted_message_id": message_id
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete draft: {str(e)}"
+        )
+    
+
 @router.get("/friends")
 async def get_friends(
     current_user: User = Depends(get_authenticated_user),
@@ -492,17 +668,21 @@ async def initiate_mj_conversation(
         if not result["target_user_online"]:
             background_tasks.add_task(
                 _queue_offline_message_safe,
-                result["message"].id,
+                result["request_message"].id,  # Fixed key
                 talk_request.target_user_id
             )
         
         return {
             "message": "MJ conversation initiated successfully!",
             "conversation_id": result["conversation"].id,
-            "message_id": result["message"].id,
+            "request_message_id": result["request_message"].id,
             "target_user_online": result["target_user_online"],
-            "response_content": result["response_content"],
-            "tokens_used": result["tokens_used"]
+            "request_sent": result["request_sent"],
+            "draft_generated": result["draft_generated"],
+            "draft_message_id": (
+                result["draft_response"]["draft_message"].id 
+                if result["draft_response"] else None
+            )
         }
         
     except ValueError as e:

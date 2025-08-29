@@ -1,43 +1,42 @@
-
-# src/models/database/memory.py
-from sqlalchemy import Column, Integer, String, DateTime, Text, ForeignKey, Float, JSON, Boolean, ARRAY
+from sqlalchemy import Column, Integer, BigInteger, String, DateTime, Text, ForeignKey, Boolean, ARRAY, Numeric, Float
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
+from pgvector.sqlalchemy import Vector  # from `pgvector`
 from ...config.database import Base
 
 class Memory(Base):
     __tablename__ = "memories"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    source_conversation_id = Column(Integer, ForeignKey("conversations.id"), nullable=True)
-    
-    # Memory Content
+
+    id = Column(BigInteger, primary_key=True, index=True)
+    user_id = Column(BigInteger, ForeignKey("users.id"), nullable=True)
+    # Keep column for data tracking but remove ForeignKey constraint reference
+    source_conversation_id = Column(BigInteger, nullable=True)
+
+    # Content
     fact = Column(Text, nullable=False)
-    context = Column(Text)
-    memory_type = Column(String(20), default="personal")  # personal, preference, skill, goal
-    category = Column(String(50))  # relationships, work, hobbies, etc.
-    
-    # Memory Metadata
-    confidence = Column(Float, default=0.8)
-    importance = Column(Float, default=0.5)  # How important is this memory
-    relevance_tags = Column(ARRAY(String), default=[])
-    
-    # Embeddings for semantic search
-    embedding = Column(ARRAY(Float))
-    
-    # Usage Statistics
-    access_count = Column(Integer, default=1)
-    last_accessed = Column(DateTime(timezone=True), server_default=func.now())
-    last_updated = Column(DateTime(timezone=True), server_default=func.now())
-    
+    context = Column(Text, nullable=True)
+    memory_type = Column(String, nullable=True)
+    category = Column(String, nullable=True)
+
+    # Metadata
+    confidence = Column(Numeric, nullable=True)
+    importance = Column(Numeric, nullable=True)
+    tags = Column(ARRAY(Text), nullable=True)
+
+    # Embedding (pgvector); set your real dimension (e.g., 1536)
+    embedding = Column(Vector(1536), nullable=True)
+
+    # Usage / extra metadata (avoid attribute name 'metadata')
+    access_count = Column(Integer, nullable=True)
+    memory_metadata = Column('metadata', JSONB, nullable=True)
+
     # Validation
-    is_validated = Column(Boolean, default=False)
-    validation_source = Column(String(50))  # user_confirmation, ai_extraction, etc.
-    
+    is_validated = Column(Boolean, nullable=True)
+
     # Timestamps
-    created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
-    
-    # Relationships
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=True)
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now(), nullable=True)
+
+    # Only keep the user relationship - remove conversation relationship entirely
     user = relationship("User", back_populates="memories")
-    source_conversation = relationship("Conversation", back_populates="memories")

@@ -253,7 +253,6 @@ async def validate_memory(
     # Update validation status
     update_data = {
         "is_validated": is_valid,
-        "validation_source": "user_feedback"
     }
     
     # Adjust confidence based on validation

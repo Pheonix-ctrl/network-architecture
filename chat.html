@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MJ Network - Complete Interface</title>
+    <title>MJ Network - Complete Working Interface</title>
     <style>
         * {
             margin: 0;
@@ -16,10 +16,11 @@
             color: #ffffff;
             font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
             line-height: 1.6;
+            overflow-x: hidden;
         }
 
         .container {
-            max-width: 1200px;
+            max-width: 1400px;
             margin: 0 auto;
             padding: 20px;
         }
@@ -35,9 +36,12 @@
         }
 
         .logo {
-            font-size: 24px;
+            font-size: 28px;
             font-weight: bold;
-            color: #00ff88;
+            background: linear-gradient(135deg, #00ff88, #00cc6a);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
         }
 
         .user-info {
@@ -47,95 +51,130 @@
         }
 
         .status-indicator {
-            width: 8px;
-            height: 8px;
+            width: 12px;
+            height: 12px;
             border-radius: 50%;
             background: #00ff88;
+            animation: pulse 2s infinite;
         }
 
-        /* Tabs */
-        .tabs {
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        /* Navigation */
+        .nav-tabs {
             display: flex;
-            gap: 10px;
+            gap: 5px;
             margin-bottom: 30px;
-            border-bottom: 1px solid #333;
+            border-bottom: 2px solid #333;
+            overflow-x: auto;
         }
 
-        .tab {
-            padding: 12px 20px;
+        .nav-tab {
+            padding: 15px 25px;
             background: transparent;
             border: none;
             color: #888;
             cursor: pointer;
-            border-bottom: 2px solid transparent;
-            transition: all 0.3s;
+            border-bottom: 3px solid transparent;
+            transition: all 0.3s ease;
+            white-space: nowrap;
+            font-weight: 500;
         }
 
-        .tab.active {
+        .nav-tab.active {
             color: #00ff88;
             border-bottom-color: #00ff88;
+            background: rgba(0, 255, 136, 0.1);
         }
 
-        .tab:hover {
+        .nav-tab:hover:not(.active) {
             color: #ffffff;
+            background: rgba(255, 255, 255, 0.05);
         }
 
-        /* Tab Content */
-        .tab-content {
+        /* Content Sections */
+        .section {
             display: none;
+            animation: fadeIn 0.3s ease;
         }
 
-        .tab-content.active {
+        .section.active {
             display: block;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
         }
 
         /* Cards */
         .card {
-            background: #1a1a1a;
+            background: linear-gradient(135deg, #1a1a1a, #222);
             border: 1px solid #333;
-            border-radius: 8px;
-            padding: 20px;
-            margin-bottom: 20px;
+            border-radius: 12px;
+            padding: 25px;
+            margin-bottom: 25px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
         }
 
         .card-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 15px;
+            margin-bottom: 20px;
         }
 
         .card-title {
-            font-size: 18px;
+            font-size: 20px;
             font-weight: 600;
             color: #ffffff;
         }
 
+        /* Grid Layout */
+        .grid {
+            display: grid;
+            gap: 25px;
+        }
+
+        .grid-2 { grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); }
+        .grid-3 { grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+        .grid-4 { grid-template-columns: repeat(4, 1fr); }
+
+        @media (max-width: 768px) {
+            .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; }
+        }
+
         /* Buttons */
         .btn {
-            padding: 10px 20px;
+            padding: 12px 24px;
             border: none;
-            border-radius: 6px;
+            border-radius: 8px;
             cursor: pointer;
             font-weight: 500;
-            transition: all 0.3s;
+            font-size: 14px;
+            transition: all 0.3s ease;
             display: inline-flex;
             align-items: center;
             gap: 8px;
+            text-decoration: none;
         }
 
         .btn-primary {
-            background: #00ff88;
-            color: #000000;
+            background: linear-gradient(135deg, #00ff88, #00cc6a);
+            color: #000;
         }
 
         .btn-primary:hover {
-            background: #00cc6a;
+            background: linear-gradient(135deg, #00cc6a, #009955);
+            transform: translateY(-1px);
         }
 
         .btn-secondary {
             background: #333;
-            color: #ffffff;
+            color: #fff;
         }
 
         .btn-secondary:hover {
@@ -144,31 +183,39 @@
 
         .btn-danger {
             background: #ff4444;
-            color: #ffffff;
+            color: #fff;
         }
 
         .btn-danger:hover {
             background: #cc3333;
         }
 
+        .btn-small {
+            padding: 8px 16px;
+            font-size: 13px;
+        }
+
         /* Forms */
         .form-group {
-            margin-bottom: 15px;
+            margin-bottom: 20px;
         }
 
         .form-label {
             display: block;
-            margin-bottom: 5px;
+            margin-bottom: 8px;
             color: #cccccc;
+            font-weight: 500;
         }
 
         .form-input {
             width: 100%;
-            padding: 10px;
+            padding: 12px 16px;
             background: #2a2a2a;
-            border: 1px solid #444;
-            border-radius: 6px;
+            border: 2px solid #444;
+            border-radius: 8px;
             color: #ffffff;
+            font-size: 14px;
+            transition: border-color 0.3s ease;
         }
 
         .form-input:focus {
@@ -177,60 +224,82 @@
         }
 
         .form-textarea {
-            width: 100%;
-            min-height: 80px;
             resize: vertical;
+            min-height: 100px;
+        }
+
+        /* Stats */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 20px;
+        }
+
+        .stat-card {
+            text-align: center;
+            padding: 20px;
+            background: rgba(0, 255, 136, 0.1);
+            border: 1px solid rgba(0, 255, 136, 0.3);
+            border-radius: 8px;
+        }
+
+        .stat-value {
+            font-size: 32px;
+            font-weight: bold;
+            color: #00ff88;
+            margin-bottom: 5px;
+        }
+
+        .stat-label {
+            font-size: 12px;
+            color: #888;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
         }
 
         /* Lists */
-        .list {
-            list-style: none;
-        }
-
         .list-item {
             display: flex;
-            justify-content: space-between;
             align-items: center;
-            padding: 15px 0;
-            border-bottom: 1px solid #333;
+            padding: 15px;
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid #333;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            transition: all 0.3s ease;
         }
 
-        .list-item:last-child {
-            border-bottom: none;
+        .list-item:hover {
+            background: rgba(255, 255, 255, 0.05);
+            transform: translateX(5px);
         }
 
         .user-avatar {
-            width: 40px;
-            height: 40px;
+            width: 45px;
+            height: 45px;
             border-radius: 50%;
-            background: #00ff88;
+            background: linear-gradient(135deg, #00ff88, #00cc6a);
             display: flex;
             align-items: center;
             justify-content: center;
-            color: #000000;
+            color: #000;
             font-weight: bold;
+            margin-right: 15px;
         }
 
         .user-details {
             flex-grow: 1;
-            margin-left: 15px;
         }
 
         .username {
             font-weight: 600;
             color: #ffffff;
+            margin-bottom: 2px;
         }
 
         .user-status {
-            font-size: 12px;
+            font-size: 13px;
             color: #888;
-        }
-
-        /* Grid Layout */
-        .grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            gap: 20px;
         }
 
         /* Modal */
@@ -241,47 +310,50 @@
             left: 0;
             right: 0;
             bottom: 0;
-            background: rgba(0, 0, 0, 0.8);
+            background: rgba(0, 0, 0, 0.9);
             z-index: 1000;
+            align-items: center;
+            justify-content: center;
         }
 
         .modal.active {
             display: flex;
-            align-items: center;
-            justify-content: center;
         }
 
         .modal-content {
             background: #1a1a1a;
             border: 1px solid #333;
-            border-radius: 8px;
+            border-radius: 12px;
             padding: 30px;
             width: 90%;
             max-width: 500px;
+            max-height: 90vh;
+            overflow-y: auto;
         }
 
         .modal-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 20px;
+            margin-bottom: 25px;
         }
 
         .modal-close {
             background: none;
             border: none;
             color: #888;
-            font-size: 24px;
+            font-size: 28px;
             cursor: pointer;
         }
 
         /* Chat Interface */
         .chat-container {
-            height: 400px;
+            height: 500px;
             border: 1px solid #333;
-            border-radius: 8px;
+            border-radius: 12px;
             display: flex;
             flex-direction: column;
+            background: #111;
         }
 
         .chat-messages {
@@ -292,91 +364,124 @@
 
         .message {
             margin-bottom: 15px;
-            padding: 10px 15px;
-            border-radius: 8px;
+            padding: 12px 18px;
+            border-radius: 18px;
             max-width: 80%;
+            word-wrap: break-word;
         }
 
         .message.sent {
-            background: #00ff88;
-            color: #000000;
+            background: linear-gradient(135deg, #00ff88, #00cc6a);
+            color: #000;
             margin-left: auto;
+            border-bottom-right-radius: 5px;
         }
 
         .message.received {
             background: #333;
-            color: #ffffff;
+            color: #fff;
+            border-bottom-left-radius: 5px;
         }
 
-        .chat-input {
+        .chat-input-container {
             display: flex;
             padding: 15px;
             border-top: 1px solid #333;
+            gap: 10px;
         }
 
-        .chat-input input {
+        .chat-input {
             flex-grow: 1;
-            margin-right: 10px;
-        }
-
-        /* Empty States */
-        .empty-state {
-            text-align: center;
-            padding: 40px 20px;
-            color: #888;
-        }
-
-        .empty-state h3 {
-            margin-bottom: 10px;
-            color: #cccccc;
-        }
-
-        /* Loading */
-        .loading {
-            text-align: center;
-            padding: 20px;
-            color: #888;
-        }
-
-        /* Success/Error Messages */
-        .alert {
             padding: 12px 16px;
-            border-radius: 6px;
-            margin-bottom: 15px;
+            background: #2a2a2a;
+            border: 1px solid #444;
+            border-radius: 25px;
+            color: #fff;
+        }
+
+        /* Alerts */
+        .alert {
+            padding: 15px 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-weight: 500;
         }
 
         .alert-success {
-            background: rgba(0, 255, 136, 0.1);
+            background: rgba(0, 255, 136, 0.15);
             border: 1px solid #00ff88;
             color: #00ff88;
         }
 
         .alert-error {
-            background: rgba(255, 68, 68, 0.1);
+            background: rgba(255, 68, 68, 0.15);
             border: 1px solid #ff4444;
             color: #ff4444;
         }
 
         .alert-info {
-            background: rgba(68, 136, 255, 0.1);
+            background: rgba(68, 136, 255, 0.15);
             border: 1px solid #4488ff;
             color: #4488ff;
+        }
+
+        /* Loading */
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #888;
+        }
+
+        .spinner {
+            width: 30px;
+            height: 30px;
+            border: 3px solid #333;
+            border-top: 3px solid #00ff88;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 15px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Empty States */
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #666;
+        }
+
+        .empty-state h3 {
+            margin-bottom: 10px;
+            color: #999;
+            font-size: 18px;
+        }
+
+        .empty-state p {
+            margin-bottom: 25px;
+            font-size: 14px;
         }
 
         /* Search */
         .search-results {
             background: #2a2a2a;
             border: 1px solid #444;
-            border-radius: 6px;
-            max-height: 200px;
+            border-radius: 8px;
+            max-height: 250px;
             overflow-y: auto;
-            margin-top: 5px;
+            margin-top: 8px;
         }
 
         .search-result {
-            padding: 10px 15px;
+            padding: 15px;
             cursor: pointer;
             border-bottom: 1px solid #444;
+            display: flex;
+            align-items: center;
+            gap: 10px;
         }
 
         .search-result:hover {
@@ -387,71 +492,130 @@
             border-bottom: none;
         }
 
-        /* Stats */
-        .stat {
+        /* Login Form */
+        .login-container {
+            max-width: 400px;
+            margin: 100px auto;
+            padding: 40px;
+            background: linear-gradient(135deg, #1a1a1a, #222);
+            border: 1px solid #333;
+            border-radius: 12px;
+            box-shadow: 0 8px 40px rgba(0, 0, 0, 0.5);
+        }
+
+        .login-logo {
             text-align: center;
-            padding: 15px;
-        }
-
-        .stat-value {
-            font-size: 24px;
+            font-size: 32px;
             font-weight: bold;
-            color: #00ff88;
+            background: linear-gradient(135deg, #00ff88, #00cc6a);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 40px;
         }
 
-        .stat-label {
-            font-size: 12px;
-            color: #888;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
+        /* Responsive */
+        @media (max-width: 768px) {
+            .container {
+                padding: 15px;
+            }
+            
+            .nav-tabs {
+                overflow-x: auto;
+            }
+            
+            .nav-tab {
+                padding: 12px 20px;
+                font-size: 14px;
+            }
+        }
+
+        /* Add transition effects */
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .form-input:disabled {
+            background: #222;
+            color: #666;
         }
     </style>
 </head>
 <body>
-    <div class="container">
+    <!-- Login Screen -->
+    <div id="login-screen" class="login-container">
+        <div class="login-logo">MJ Network</div>
+        <div id="login-alerts"></div>
+        
+        <form id="login-form">
+            <div class="form-group">
+                <label class="form-label">Email</label>
+                <input type="email" id="login-email" class="form-input" required autocomplete="email">
+            </div>
+            
+            <div class="form-group">
+                <label class="form-label">Password</label>
+                <input type="password" id="login-password" class="form-input" required autocomplete="current-password">
+            </div>
+            
+            <button type="submit" class="btn btn-primary" id="login-btn" style="width: 100%;">
+                Login to MJ Network
+            </button>
+        </form>
+    </div>
+
+    <!-- Main App -->
+    <div id="main-app" class="container" style="display: none;">
         <!-- Header -->
         <div class="header">
             <div class="logo">MJ Network</div>
             <div class="user-info">
                 <div class="status-indicator"></div>
-                <span id="username">Loading...</span>
-                <button class="btn btn-secondary" onclick="logout()">Logout</button>
+                <span id="current-username">Loading...</span>
+                <button class="btn btn-secondary btn-small" onclick="logout()">Logout</button>
             </div>
         </div>
 
-        <!-- Navigation Tabs -->
-        <div class="tabs">
-            <button class="tab active" onclick="showTab('dashboard')">Dashboard</button>
-            <button class="tab" onclick="showTab('friends')">Friends</button>
-            <button class="tab" onclick="showTab('requests')">Requests</button>
-            <button class="tab" onclick="showTab('conversations')">MJ Talks</button>
-            <button class="tab" onclick="showTab('discovery')">Discovery</button>
-            <button class="tab" onclick="showTab('settings')">Settings</button>
+        <!-- Navigation -->
+        <div class="nav-tabs">
+            <button class="nav-tab active" onclick="showSection('dashboard')">Dashboard</button>
+            <button class="nav-tab" onclick="showSection('mj-chat')">MJ Chat</button>
+            <button class="nav-tab" onclick="showSection('friends')">Friends</button>
+            <button class="nav-tab" onclick="showSection('requests')">Requests</button>
+            <button class="nav-tab" onclick="showSection('pending-responses')">Pending Responses</button>
+            <button class="nav-tab" onclick="showSection('conversations')">MJ Talks</button>
+            <button class="nav-tab" onclick="showSection('discovery')">Discovery</button>
+            <button class="nav-tab" onclick="showSection('settings')">Settings</button>
         </div>
 
-        <!-- Dashboard Tab -->
-        <div id="dashboard" class="tab-content active">
-            <div class="grid">
+        <!-- Dashboard Section -->
+        <div id="dashboard" class="section active">
+            <div class="grid grid-2">
                 <div class="card">
                     <div class="card-header">
-                        <h3 class="card-title">Network Status</h3>
+                        <h3 class="card-title">Network Overview</h3>
                     </div>
-                    <div class="grid" style="grid-template-columns: repeat(2, 1fr); gap: 10px;">
-                        <div class="stat">
-                            <div class="stat-value" id="friends-count">0</div>
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <div class="stat-value" id="stat-friends">0</div>
                             <div class="stat-label">Friends</div>
                         </div>
-                        <div class="stat">
-                            <div class="stat-value" id="conversations-count">0</div>
+                        <div class="stat-card">
+                            <div class="stat-value" id="stat-conversations">0</div>
                             <div class="stat-label">Conversations</div>
                         </div>
-                        <div class="stat">
-                            <div class="stat-value" id="messages-sent">0</div>
-                            <div class="stat-label">Messages Sent</div>
+                        <div class="stat-card">
+                            <div class="stat-value" id="stat-messages-sent">0</div>
+                            <div class="stat-label">Sent</div>
                         </div>
-                        <div class="stat">
-                            <div class="stat-value" id="messages-received">0</div>
-                            <div class="stat-label">Messages Received</div>
+                        <div class="stat-card">
+                            <div class="stat-value" id="stat-messages-received">0</div>
+                            <div class="stat-label">Received</div>
+                        </div>
+                        <div class="stat-card" onclick="showSection('pending-responses')" style="cursor: pointer; transition: all 0.3s ease;" onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'">
+                            <div class="stat-value" id="stat-pending-responses">0</div>
+                            <div class="stat-label">Pending Responses</div>
                         </div>
                     </div>
                 </div>
@@ -460,10 +624,16 @@
                     <div class="card-header">
                         <h3 class="card-title">Quick Actions</h3>
                     </div>
-                    <div style="display: flex; flex-direction: column; gap: 10px;">
-                        <button class="btn btn-primary" onclick="showTab('friends'); openAddFriendModal()">Add Friend</button>
-                        <button class="btn btn-secondary" onclick="showTab('discovery')">Discover Nearby</button>
-                        <button class="btn btn-secondary" onclick="initiateRandomMJTalk()">Random MJ Talk</button>
+                    <div style="display: flex; flex-direction: column; gap: 15px;">
+                        <button class="btn btn-primary" onclick="showSection('friends'); openAddFriendModal()">
+                            Add Friend
+                        </button>
+                        <button class="btn btn-secondary" onclick="showSection('discovery')">
+                            Discover Nearby
+                        </button>
+                        <button class="btn btn-secondary" onclick="initiateRandomMJTalk()">
+                            Random MJ Talk
+                        </button>
                     </div>
                 </div>
             </div>
@@ -471,36 +641,70 @@
             <div class="card">
                 <div class="card-header">
                     <h3 class="card-title">Recent Activity</h3>
+                    <button class="btn btn-secondary btn-small" onclick="loadDashboardData()">Refresh</button>
                 </div>
                 <div id="recent-activity">
-                    <div class="loading">Loading recent activity...</div>
+                    <div class="loading">
+                        <div class="spinner"></div>
+                        Loading recent activity...
+                    </div>
                 </div>
             </div>
         </div>
 
-        <!-- Friends Tab -->
-        <div id="friends" class="tab-content">
+        <!-- MJ Chat Section -->
+        <div id="mj-chat" class="section">
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">Chat with Your MJ</h3>
+                    <button class="btn btn-secondary btn-small" onclick="clearMJChat()">Clear Chat</button>
+                </div>
+                
+                <div class="chat-container">
+                    <div class="chat-messages" id="mj-chat-messages">
+                        <div class="message received">
+                            <strong>MJ:</strong> Hey there! I'm your MJ assistant. I can help you with questions, connect with your friends' MJs, and much more. What would you like to talk about?
+                        </div>
+                    </div>
+                    <div class="chat-input-container">
+                        <input type="text" class="chat-input" id="mj-message-input" 
+                               placeholder="Type your message to MJ..." 
+                               onkeypress="if(event.key==='Enter') sendMJMessage()">
+                        <button class="btn btn-primary" onclick="sendMJMessage()">Send</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Friends Section -->
+        <div id="friends" class="section">
             <div class="card">
                 <div class="card-header">
                     <h3 class="card-title">Your Friends</h3>
                     <button class="btn btn-primary" onclick="openAddFriendModal()">Add Friend</button>
                 </div>
                 <div id="friends-list">
-                    <div class="loading">Loading friends...</div>
+                    <div class="loading">
+                        <div class="spinner"></div>
+                        Loading friends...
+                    </div>
                 </div>
             </div>
         </div>
 
-        <!-- Requests Tab -->
-        <div id="requests" class="tab-content">
-            <div class="grid">
+        <!-- Friend Requests Section -->
+        <div id="requests" class="section">
+            <div class="grid grid-2">
                 <div class="card">
                     <div class="card-header">
                         <h3 class="card-title">Pending Requests</h3>
-                        <span class="badge" id="pending-count">0</span>
+                        <span class="btn btn-secondary btn-small" id="pending-count">0</span>
                     </div>
                     <div id="pending-requests">
-                        <div class="loading">Loading requests...</div>
+                        <div class="loading">
+                            <div class="spinner"></div>
+                            Loading requests...
+                        </div>
                     </div>
                 </div>
 
@@ -509,57 +713,88 @@
                         <h3 class="card-title">Sent Requests</h3>
                     </div>
                     <div id="sent-requests">
-                        <div class="loading">Loading sent requests...</div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- MJ Conversations Tab -->
-        <div id="conversations" class="tab-content">
-            <div class="card">
-                <div class="card-header">
-                    <h3 class="card-title">MJ-to-MJ Conversations</h3>
-                </div>
-                <div id="conversations-list">
-                    <div class="loading">Loading conversations...</div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Discovery Tab -->
-        <div id="discovery" class="tab-content">
-            <div class="grid">
-                <div class="card">
-                    <div class="card-header">
-                        <h3 class="card-title">Location Settings</h3>
-                    </div>
-                    <div class="form-group">
-                        <button class="btn btn-primary" onclick="enableLocation()">Enable Location Sharing</button>
-                        <button class="btn btn-secondary" onclick="disableLocation()">Disable Location</button>
-                    </div>
-                </div>
-
-                <div class="card">
-                    <div class="card-header">
-                        <h3 class="card-title">Nearby MJ Users</h3>
-                    </div>
-                    <div id="nearby-users">
                         <div class="empty-state">
-                            <h3>Enable location to discover nearby MJ users</h3>
-                            <p>Connect with people around you!</p>
+                            <h3>No sent requests</h3>
+                            <p>Requests you send will appear here</p>
                         </div>
                     </div>
                 </div>
             </div>
         </div>
 
-        <!-- Settings Tab -->
-        <div id="settings" class="tab-content">
+                <!-- Pending Responses Section -->
+        <div id="pending-responses" class="section">
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">Pending MJ Responses</h3>
+                    <div style="display: flex; gap: 10px; align-items: center;">
+                        <span class="btn btn-secondary btn-small" id="pending-responses-count">0</span>
+                        <button class="btn btn-secondary btn-small" onclick="loadPendingResponses()">Refresh</button>
+                    </div>
+                </div>
+                <div id="pending-responses-list">
+                    <div class="loading">
+                        <div class="spinner"></div>
+                        Loading pending responses...
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- MJ Conversations Section -->
+        <div id="conversations" class="section">
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">MJ-to-MJ Conversations</h3>
+                    <button class="btn btn-primary" onclick="openMJTalkModal()">Start MJ Talk</button>
+                </div>
+                <div id="conversations-list">
+                    <div class="loading">
+                        <div class="spinner"></div>
+                        Loading conversations...
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Discovery Section -->
+        <div id="discovery" class="section">
+            <div class="grid grid-2">
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="card-title">Location Settings</h3>
+                    </div>
+                    <div style="display: flex; flex-direction: column; gap: 15px;">
+                        <button class="btn btn-primary" onclick="enableLocation()">Enable Location Sharing</button>
+                        <button class="btn btn-secondary" onclick="disableLocation()">Disable Location</button>
+                    </div>
+                    <div id="location-status" class="alert alert-info" style="margin-top: 15px;">
+                        Location sharing is disabled
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="card-title">Nearby MJ Users</h3>
+                        <button class="btn btn-secondary btn-small" onclick="loadNearbyUsers()">Refresh</button>
+                    </div>
+                    <div id="nearby-users">
+                        <div class="empty-state">
+                            <h3>Enable location to discover nearby users</h3>
+                            <p>Share your location to connect with MJ users around you!</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Settings Section -->
+        <div id="settings" class="section">
             <div class="card">
                 <div class="card-header">
                     <h3 class="card-title">MJ Network Settings</h3>
                 </div>
+                
                 <div class="form-group">
                     <label class="form-label">MJ Status</label>
                     <select class="form-input" id="mj-status">
@@ -569,10 +804,14 @@
                         <option value="offline">Offline</option>
                     </select>
                 </div>
+                
                 <div class="form-group">
-                    <label class="form-label">Allow MJ to respond when offline</label>
-                    <input type="checkbox" id="offline-responses" checked>
+                    <label class="form-label">
+                        <input type="checkbox" id="offline-responses" style="margin-right: 10px;">
+                        Allow MJ to respond when offline
+                    </label>
                 </div>
+                
                 <button class="btn btn-primary" onclick="saveSettings()">Save Settings</button>
             </div>
         </div>
@@ -585,12 +824,15 @@
                 <h3>Add Friend to MJ Network</h3>
                 <button class="modal-close" onclick="closeAddFriendModal()">&times;</button>
             </div>
+            
             <div class="form-group">
-                <label class="form-label">Search by Username or MJ ID</label>
-                <input type="text" class="form-input" id="search-input" placeholder="Enter username..." 
+                <label class="form-label">Search by Username</label>
+                <input type="text" class="form-input" id="friend-search-input" 
+                       placeholder="Enter username..." 
                        oninput="searchUsers(this.value)" minlength="2">
-                <div id="search-results" class="search-results" style="display: none;"></div>
+                <div id="friend-search-results" class="search-results" style="display: none;"></div>
             </div>
+            
             <div class="form-group">
                 <label class="form-label">Relationship Type</label>
                 <select class="form-input" id="relationship-type">
@@ -600,12 +842,14 @@
                     <option value="acquaintance">Acquaintance</option>
                 </select>
             </div>
+            
             <div class="form-group">
                 <label class="form-label">Message (Optional)</label>
                 <textarea class="form-input form-textarea" id="friend-message" 
                          placeholder="Hey! Let's connect our MJs so they can chat when we're offline!"></textarea>
             </div>
-            <div style="display: flex; gap: 10px; justify-content: flex-end;">
+            
+            <div style="display: flex; gap: 15px; justify-content: flex-end;">
                 <button class="btn btn-secondary" onclick="closeAddFriendModal()">Cancel</button>
                 <button class="btn btn-primary" onclick="sendFriendRequest()" id="send-request-btn" disabled>
                     Send Friend Request
@@ -616,17 +860,19 @@
 
     <!-- MJ Talk Modal -->
     <div id="mj-talk-modal" class="modal">
-        <div class="modal-content" style="max-width: 600px;">
+        <div class="modal-content">
             <div class="modal-header">
-                <h3>MJ-to-MJ Conversation</h3>
+                <h3>Start MJ-to-MJ Conversation</h3>
                 <button class="modal-close" onclick="closeMJTalkModal()">&times;</button>
             </div>
+            
             <div class="form-group">
-                <label class="form-label">Talk to</label>
+                <label class="form-label">Talk to Friend's MJ</label>
                 <select class="form-input" id="mj-talk-target">
                     <option value="">Select a friend...</option>
                 </select>
             </div>
+            
             <div class="form-group">
                 <label class="form-label">Purpose</label>
                 <select class="form-input" id="mj-talk-purpose">
@@ -638,49 +884,156 @@
                     <option value="Custom message">Custom message</option>
                 </select>
             </div>
+            
             <div class="form-group" id="custom-purpose-group" style="display: none;">
                 <label class="form-label">Custom Purpose</label>
                 <textarea class="form-input form-textarea" id="custom-purpose" 
                          placeholder="Describe what you want your MJ to talk about..."></textarea>
             </div>
-            <div style="display: flex; gap: 10px; justify-content: flex-end;">
+            
+            <div style="display: flex; gap: 15px; justify-content: flex-end;">
                 <button class="btn btn-secondary" onclick="closeMJTalkModal()">Cancel</button>
                 <button class="btn btn-primary" onclick="initiateMJTalk()">Start MJ Conversation</button>
             </div>
         </div>
     </div>
-
+    <!-- Draft Response Modal -->
+    <div id="draft-response-modal" class="modal">
+        <div class="modal-content" style="max-width: 600px;">
+            <div class="modal-header">
+                <h3>Review MJ Draft Response</h3>
+                <button class="modal-close" onclick="closeDraftModal()">&times;</button>
+            </div>
+            
+            <div class="card" style="margin-bottom: 20px; background: rgba(0, 136, 255, 0.1); border-color: rgba(0, 136, 255, 0.3);">
+                <div style="font-weight: 600; margin-bottom: 10px;">Original Request:</div>
+                <div id="original-request-text" style="font-style: italic; color: #ccc;"></div>
+            </div>
+            
+            <div class="card" style="margin-bottom: 20px; background: rgba(0, 255, 136, 0.1); border-color: rgba(0, 255, 136, 0.3);">
+                <div style="font-weight: 600; margin-bottom: 10px;">Your MJ's Draft Response:</div>
+                <div style="margin-bottom: 15px;">
+                    <textarea class="form-input form-textarea" id="draft-content" style="min-height: 120px;" placeholder="Your MJ's response..."></textarea>
+                </div>
+                <div id="draft-metadata" style="font-size: 12px; color: #888;"></div>
+            </div>
+            
+            <div style="display: flex; gap: 15px; justify-content: flex-end;">
+                <button class="btn btn-danger" onclick="deleteDraft()" id="delete-draft-btn">
+                    Delete Draft
+                </button>
+                <button class="btn btn-secondary" onclick="closeDraftModal()">
+                    Cancel
+                </button>
+                <button class="btn btn-primary" onclick="approveDraft()" id="approve-draft-btn">
+                    Approve & Send
+                </button>
+            </div>
+        </div>
+    </div>
     <script>
-        // Global variables
+        // Global state
         let authToken = localStorage.getItem('authToken');
         let currentUser = null;
         let selectedFriend = null;
-
-        // API Configuration
         const API_BASE = 'http://localhost:8000';
-        
+
         // Initialize app
         document.addEventListener('DOMContentLoaded', function() {
             if (!authToken) {
-                window.location.href = '/login.html';
+                showLoginScreen();
                 return;
             }
             
             initializeApp();
         });
 
+        // Authentication
         async function initializeApp() {
             try {
+                showAlert('Initializing MJ Network...', 'info');
                 await loadUserInfo();
+                
+                // Initialize MJ registry if it doesn't exist
+                try {
+                    await apiRequest('/api/v1/mj-network/registry/initialize', { method: 'POST' });
+                } catch (error) {
+                    console.log('MJ registry already exists or initialization failed:', error.message);
+                }
+                
                 await loadDashboardData();
-                await loadAllData();
+                hideLoginScreen();
+                
+                // Connect WebSocket for MJ chat
+                connectToMJWebSocket();
+                
+                showAlert('MJ Network loaded successfully!', 'success');
+                startMessagePolling();
             } catch (error) {
-                console.error('Failed to initialize app:', error);
-                showAlert('Failed to load MJ Network. Please try refreshing the page.', 'error');
+                console.error('Failed to initialize:', error);
+                showAlert('Failed to load MJ Network. Please refresh the page.', 'error');
+                logout();
             }
         }
 
-        // API Helper Functions
+        function showLoginScreen() {
+            document.getElementById('login-screen').style.display = 'block';
+            document.getElementById('main-app').style.display = 'none';
+        }
+
+        function hideLoginScreen() {
+            document.getElementById('login-screen').style.display = 'none';
+            document.getElementById('main-app').style.display = 'block';
+        }
+
+        // Login form handler
+        document.getElementById('login-form').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const email = document.getElementById('login-email').value;
+            const password = document.getElementById('login-password').value;
+            const loginBtn = document.getElementById('login-btn');
+            
+            loginBtn.disabled = true;
+            loginBtn.textContent = 'Logging in...';
+            
+            try {
+                const response = await fetch(`${API_BASE}/api/v1/auth/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    localStorage.setItem('authToken', data.access_token);
+                    authToken = data.access_token;
+                    showLoginAlert('Login successful! Loading MJ Network...', 'success');
+                    setTimeout(() => {
+                        initializeApp();
+                    }, 1000);
+                } else {
+                    showLoginAlert(data.detail || 'Login failed', 'error');
+                }
+            } catch (error) {
+                showLoginAlert('Network error. Please check your connection.', 'error');
+                console.error('Login error:', error);
+            } finally {
+                loginBtn.disabled = false;
+                loginBtn.textContent = 'Login to MJ Network';
+            }
+        });
+
+        function showLoginAlert(message, type) {
+            const alertDiv = document.getElementById('login-alerts');
+            alertDiv.innerHTML = `<div class="alert alert-${type}">${message}</div>`;
+            setTimeout(() => {
+                alertDiv.innerHTML = '';
+            }, 5000);
+        }
+
+        // API helper with better error handling
         async function apiRequest(endpoint, options = {}) {
             const url = `${API_BASE}${endpoint}`;
             const config = {
@@ -693,79 +1046,160 @@
             };
 
             try {
+                console.log(`Making API request to: ${url}`);
                 const response = await fetch(url, config);
                 
+                console.log(`Response status: ${response.status}`);
+                
                 if (response.status === 401) {
+                    console.error('Unauthorized - clearing token and redirecting to login');
                     localStorage.removeItem('authToken');
-                    window.location.href = '/login.html';
-                    return;
+                    authToken = null;
+                    showLoginScreen();
+                    throw new Error('Authentication failed');
                 }
 
                 if (!response.ok) {
-                    const errorData = await response.json().catch(() => ({}));
+                    let errorData;
+                    try {
+                        errorData = await response.json();
+                    } catch {
+                        errorData = { detail: `HTTP ${response.status}` };
+                    }
+                    console.error(`API Error ${response.status}:`, errorData);
                     throw new Error(errorData.detail || `HTTP ${response.status}`);
                 }
 
-                return await response.json();
+                const data = await response.json();
+                console.log(`API Response:`, data);
+                return data;
             } catch (error) {
                 console.error(`API request failed: ${endpoint}`, error);
                 throw error;
             }
         }
 
-        // User Management
+        // User management
         async function loadUserInfo() {
             try {
                 const userData = await apiRequest('/api/v1/auth/me');
                 currentUser = userData;
-                document.getElementById('username').textContent = userData.username;
+                
+                if (userData && userData.username) {
+                    document.getElementById('current-username').textContent = userData.username;
+                } else {
+                    console.error('Invalid user data received:', userData);
+                    throw new Error('Invalid user data');
+                }
             } catch (error) {
                 console.error('Failed to load user info:', error);
+                // Clear invalid token
+                localStorage.removeItem('authToken');
+                authToken = null;
+                throw error;
             }
         }
 
         async function loadDashboardData() {
             try {
-                const status = await apiRequest('/api/v1/mj-network/registry/status');
+                const statusData = await apiRequest('/api/v1/mj-network/registry/status');
                 
                 // Update dashboard stats
-                document.getElementById('friends-count').textContent = status.friends_count || 0;
-                document.getElementById('conversations-count').textContent = status.active_conversations || 0;
+                document.getElementById('stat-friends').textContent = statusData.friends_count || 0;
+                document.getElementById('stat-conversations').textContent = statusData.active_conversations || 0;
                 
-                if (status.mj_registry) {
-                    document.getElementById('messages-sent').textContent = status.mj_registry.total_messages_sent || 0;
-                    document.getElementById('messages-received').textContent = status.mj_registry.total_messages_received || 0;
+                if (statusData.mj_registry) {
+                    document.getElementById('stat-messages-sent').textContent = statusData.mj_registry.total_messages_sent || 0;
+                    document.getElementById('stat-messages-received').textContent = statusData.mj_registry.total_messages_received || 0;
                 }
+
+                await loadRecentActivity();
             } catch (error) {
                 console.error('Failed to load dashboard data:', error);
+                showAlert('Failed to load dashboard data', 'error');
             }
         }
 
-        async function loadAllData() {
-            await Promise.all([
-                loadFriends(),
-                loadRequests(),
-                loadConversations()
-            ]);
+        async function loadRecentActivity() {
+            const activityContainer = document.getElementById('recent-activity');
+            
+            try {
+                // Load conversations for recent activity
+                const conversations = await apiRequest('/api/v1/mj-network/conversations');
+                const friends = await apiRequest('/api/v1/mj-network/friends');
+                
+                let activities = [];
+                
+                // Add conversation activities
+                if (conversations.conversations && conversations.conversations.length > 0) {
+                    conversations.conversations.slice(0, 3).forEach(conv => {
+                        const otherUser = conv.user_a_username === currentUser.username ? 
+                            conv.user_b_username : conv.user_a_username;
+                        activities.push({
+                            description: `MJ conversation with ${otherUser}`,
+                            timestamp: conv.last_message_at,
+                            type: 'conversation'
+                        });
+                    });
+                }
+                
+                // Add friend activities
+                if (friends.friends && friends.friends.length > 0) {
+                    friends.friends.slice(0, 2).forEach(friend => {
+                        activities.push({
+                            description: `Connected with ${friend.friend_username}`,
+                            timestamp: friend.created_at || new Date().toISOString(),
+                            type: 'friend'
+                        });
+                    });
+                }
+                
+                activities.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+                
+                if (activities.length > 0) {
+                    activityContainer.innerHTML = activities.map(activity => `
+                        <div class="list-item">
+                            <div class="user-avatar">${activity.type === 'conversation' ? '💬' : '👥'}</div>
+                            <div class="user-details">
+                                <div class="username">${activity.description}</div>
+                                <div class="user-status">${new Date(activity.timestamp).toLocaleString()}</div>
+                            </div>
+                        </div>
+                    `).join('');
+                } else {
+                    activityContainer.innerHTML = `
+                        <div class="empty-state">
+                            <h3>No recent activity</h3>
+                            <p>Start connecting with friends to see activity!</p>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                console.error('Failed to load recent activity:', error);
+                activityContainer.innerHTML = '<div class="alert alert-error">Failed to load activity</div>';
+            }
         }
 
-        // Tab Management
-        function showTab(tabName) {
-            // Hide all tabs
-            document.querySelectorAll('.tab-content').forEach(tab => {
+        // Navigation
+        function showSection(sectionId) {
+            // Hide all sections
+            document.querySelectorAll('.section').forEach(section => {
+                section.classList.remove('active');
+            });
+            
+            // Remove active class from all tabs
+            document.querySelectorAll('.nav-tab').forEach(tab => {
                 tab.classList.remove('active');
             });
             
-            document.querySelectorAll('.tab').forEach(tab => {
-                tab.classList.remove('active');
-            });
-
-            // Show selected tab
-            document.getElementById(tabName).classList.add('active');
+            // Show selected section
+            document.getElementById(sectionId).classList.add('active');
+            
+            // Add active class to clicked tab
             event.target.classList.add('active');
-
-            // Load tab-specific data
-            switch(tabName) {
+            
+            // Load section-specific data
+            switch(sectionId) {
                 case 'friends':
                     loadFriends();
                     break;
@@ -778,14 +1212,120 @@
                 case 'discovery':
                     loadNearbyUsers();
                     break;
+                case 'pending-responses':
+                    loadPendingResponses();
+                    break;
             }
         }
 
-        // Friends Management
+        function openPendingResponses() {
+            showSection('pending-responses');
+        }
+
+        // MJ Chat functionality - Use WebSocket
+        async function sendMJMessage() {
+            const messageInput = document.getElementById('mj-message-input');
+            const message = messageInput.value.trim();
+            
+            if (!message) return;
+            
+            const messagesContainer = document.getElementById('mj-chat-messages');
+            
+            // Add user message to chat
+            const userMessageDiv = document.createElement('div');
+            userMessageDiv.className = 'message sent';
+            userMessageDiv.innerHTML = `<strong>You:</strong> ${message}`;
+            messagesContainer.appendChild(userMessageDiv);
+            
+            // Clear input
+            messageInput.value = '';
+            
+            // Add loading message
+            const loadingDiv = document.createElement('div');
+            loadingDiv.className = 'message received';
+            loadingDiv.innerHTML = '<strong>MJ:</strong> <em>Thinking...</em>';
+            messagesContainer.appendChild(loadingDiv);
+            
+            // Scroll to bottom
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+            
+            try {
+                // Use WebSocket connection
+                if (!window.mjWebSocket || window.mjWebSocket.readyState !== WebSocket.OPEN) {
+                    connectToMJWebSocket();
+                    // Wait a bit for connection
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                }
+                
+                if (window.mjWebSocket && window.mjWebSocket.readyState === WebSocket.OPEN) {
+                    window.mjWebSocket.send(JSON.stringify({ message }));
+                    
+                    // Set up one-time message handler
+                    window.mjWebSocket.onmessage = (event) => {
+                        try {
+                            const data = JSON.parse(event.data);
+                            loadingDiv.remove();
+                            
+                            const mjResponseDiv = document.createElement('div');
+                            mjResponseDiv.className = 'message received';
+                            mjResponseDiv.innerHTML = `<strong>MJ:</strong> ${data.content || 'Sorry, I had trouble processing that message.'}`;
+                            messagesContainer.appendChild(mjResponseDiv);
+                            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+                        } catch (e) {
+                            console.error('WebSocket message error:', e);
+                            loadingDiv.innerHTML = '<strong>MJ:</strong> <em>Sorry, I had trouble understanding the response.</em>';
+                        }
+                    };
+                } else {
+                    throw new Error('WebSocket connection failed');
+                }
+                
+            } catch (error) {
+                console.error('Failed to send message:', error);
+                loadingDiv.innerHTML = '<strong>MJ:</strong> <em>Sorry, I\'m having connection issues right now. Please try again.</em>';
+            }
+        }
+
+        function connectToMJWebSocket() {
+            if (window.mjWebSocket) {
+                window.mjWebSocket.close();
+            }
+            
+            try {
+                const wsUrl = `ws://localhost:8000/ws/${currentUser.id}`;
+                window.mjWebSocket = new WebSocket(wsUrl);
+                
+                window.mjWebSocket.onopen = () => {
+                    console.log('MJ WebSocket connected');
+                };
+                
+                window.mjWebSocket.onclose = () => {
+                    console.log('MJ WebSocket disconnected');
+                };
+                
+                window.mjWebSocket.onerror = (error) => {
+                    console.error('WebSocket error:', error);
+                };
+            } catch (error) {
+                console.error('Failed to connect WebSocket:', error);
+            }
+        }
+
+        function clearMJChat() {
+            const messagesContainer = document.getElementById('mj-chat-messages');
+            messagesContainer.innerHTML = `
+                <div class="message received">
+                    <strong>MJ:</strong> Chat cleared! What would you like to talk about?
+                </div>
+            `;
+        }
+
+        // Friends management
         async function loadFriends() {
+            const friendsList = document.getElementById('friends-list');
+            
             try {
                 const friends = await apiRequest('/api/v1/mj-network/friends');
-                const friendsList = document.getElementById('friends-list');
                 
                 if (friends.friends && friends.friends.length > 0) {
                     friendsList.innerHTML = friends.friends.map(friend => `
@@ -796,12 +1336,10 @@
                                 <div class="user-status">${friend.relationship_type} • Trust: ${Math.round(friend.trust_level * 100)}%</div>
                             </div>
                             <div style="display: flex; gap: 10px;">
-                                <button class="btn btn-primary" onclick="startMJTalk(${friend.friend_user_id}, '${friend.friend_username}')">
+                                <button class="btn btn-primary btn-small" onclick="startMJTalk(${friend.friend_user_id}, '${friend.friend_username}')">
                                     MJ Talk
                                 </button>
-                                <button class="btn btn-secondary" onclick="viewFriend(${friend.friend_user_id})">
-                                    View
-                                </button>
+                                <button class="btn btn-secondary btn-small">View</button>
                             </div>
                         </div>
                     `).join('');
@@ -816,15 +1354,16 @@
                 }
             } catch (error) {
                 console.error('Failed to load friends:', error);
-                document.getElementById('friends-list').innerHTML = '<div class="alert alert-error">Failed to load friends</div>';
+                friendsList.innerHTML = '<div class="alert alert-error">Failed to load friends</div>';
             }
         }
 
         async function loadRequests() {
+            const pendingContainer = document.getElementById('pending-requests');
+            const pendingCount = document.getElementById('pending-count');
+            
             try {
                 const requests = await apiRequest('/api/v1/mj-network/friends/requests/pending');
-                const pendingContainer = document.getElementById('pending-requests');
-                const pendingCount = document.getElementById('pending-count');
                 
                 pendingCount.textContent = requests.pending_requests?.length || 0;
                 
@@ -838,8 +1377,8 @@
                                 <div class="user-status">Expires: ${new Date(request.expires_at).toLocaleDateString()}</div>
                             </div>
                             <div style="display: flex; gap: 10px;">
-                                <button class="btn btn-primary" onclick="acceptRequest(${request.id})">Accept</button>
-                                <button class="btn btn-danger" onclick="rejectRequest(${request.id})">Reject</button>
+                                <button class="btn btn-primary btn-small" onclick="acceptRequest(${request.id})">Accept</button>
+                                <button class="btn btn-danger btn-small" onclick="rejectRequest(${request.id})">Reject</button>
                             </div>
                         </div>
                     `).join('');
@@ -853,23 +1392,22 @@
                 }
             } catch (error) {
                 console.error('Failed to load requests:', error);
-                document.getElementById('pending-requests').innerHTML = '<div class="alert alert-error">Failed to load requests</div>';
+                pendingContainer.innerHTML = '<div class="alert alert-error">Failed to load requests</div>';
             }
         }
 
         async function loadConversations() {
+            const conversationsList = document.getElementById('conversations-list');
+            
             try {
                 const conversations = await apiRequest('/api/v1/mj-network/conversations');
-                const conversationsList = document.getElementById('conversations-list');
                 
                 if (conversations.conversations && conversations.conversations.length > 0) {
                     conversationsList.innerHTML = conversations.conversations.map(conv => `
                         <div class="list-item">
-                            <div class="user-avatar">MJ</div>
+                            <div class="user-avatar">🤖</div>
                             <div class="user-details">
-                                <div class="username">
-                                    ${conv.user_a_username} ↔ ${conv.user_b_username}
-                                </div>
+                                <div class="username">${conv.user_a_username} ↔ ${conv.user_b_username}</div>
                                 <div class="user-status">
                                     ${conv.message_count} messages • ${conv.conversation_topic || 'General conversation'}
                                 </div>
@@ -877,7 +1415,7 @@
                                     Last: ${new Date(conv.last_message_at).toLocaleDateString()}
                                 </div>
                             </div>
-                            <button class="btn btn-secondary" onclick="viewConversation(${conv.id})">
+                            <button class="btn btn-secondary btn-small" onclick="viewConversation(${conv.id})">
                                 View Messages
                             </button>
                         </div>
@@ -893,51 +1431,49 @@
                 }
             } catch (error) {
                 console.error('Failed to load conversations:', error);
-                document.getElementById('conversations-list').innerHTML = '<div class="alert alert-error">Failed to load conversations</div>';
+                conversationsList.innerHTML = '<div class="alert alert-error">Failed to load conversations</div>';
             }
         }
 
-        // Friend Request Functions
+        // Friend request functions
         function openAddFriendModal() {
             document.getElementById('add-friend-modal').classList.add('active');
-            document.getElementById('search-input').focus();
+            document.getElementById('friend-search-input').focus();
         }
 
         function closeAddFriendModal() {
             document.getElementById('add-friend-modal').classList.remove('active');
-            document.getElementById('search-input').value = '';
-            document.getElementById('search-results').style.display = 'none';
+            document.getElementById('friend-search-input').value = '';
+            document.getElementById('friend-search-results').style.display = 'none';
             document.getElementById('send-request-btn').disabled = true;
             selectedFriend = null;
         }
 
         async function searchUsers(query) {
             if (query.length < 2) {
-                document.getElementById('search-results').style.display = 'none';
+                document.getElementById('friend-search-results').style.display = 'none';
                 document.getElementById('send-request-btn').disabled = true;
                 return;
             }
 
             try {
                 const results = await apiRequest(`/api/v1/mj-network/search/users?query=${encodeURIComponent(query)}`);
-                const searchResults = document.getElementById('search-results');
+                const searchResults = document.getElementById('friend-search-results');
                 
                 if (results.search_results && results.search_results.length > 0) {
                     searchResults.innerHTML = results.search_results.map(user => `
                         <div class="search-result" onclick="selectUser(${user.user_id}, '${user.username}', ${user.is_friend}, ${user.has_pending_request})">
-                            <div style="display: flex; align-items: center; gap: 10px;">
-                                <div class="user-avatar" style="width: 30px; height: 30px; font-size: 12px;">
-                                    ${user.username.charAt(0).toUpperCase()}
-                                </div>
-                                <div>
-                                    <div class="username">${user.username}</div>
-                                    <div class="user-status">${user.mj_instance_id}</div>
-                                </div>
-                                <div style="margin-left: auto;">
-                                    ${user.is_friend ? '<span style="color: #00ff88;">Friend</span>' : 
-                                      user.has_pending_request ? '<span style="color: #ffaa00;">Pending</span>' : 
-                                      '<span style="color: #888;">Add</span>'}
-                                </div>
+                            <div class="user-avatar" style="width: 35px; height: 35px; font-size: 14px;">
+                                ${user.username.charAt(0).toUpperCase()}
+                            </div>
+                            <div style="flex-grow: 1;">
+                                <div class="username">${user.username}</div>
+                                <div class="user-status">${user.mj_instance_id}</div>
+                            </div>
+                            <div style="margin-left: auto; font-size: 12px;">
+                                ${user.is_friend ? '<span style="color: #00ff88;">Friend</span>' : 
+                                  user.has_pending_request ? '<span style="color: #ffaa00;">Pending</span>' : 
+                                  '<span style="color: #888;">Add</span>'}
                             </div>
                         </div>
                     `).join('');
@@ -948,8 +1484,8 @@
                 }
             } catch (error) {
                 console.error('Search failed:', error);
-                document.getElementById('search-results').innerHTML = '<div class="search-result">Search failed</div>';
-                document.getElementById('search-results').style.display = 'block';
+                document.getElementById('friend-search-results').innerHTML = '<div class="search-result">Search failed</div>';
+                document.getElementById('friend-search-results').style.display = 'block';
             }
         }
 
@@ -960,8 +1496,8 @@
             }
 
             selectedFriend = { id: userId, username: username };
-            document.getElementById('search-input').value = username;
-            document.getElementById('search-results').style.display = 'none';
+            document.getElementById('friend-search-input').value = username;
+            document.getElementById('friend-search-results').style.display = 'none';
             document.getElementById('send-request-btn').disabled = false;
         }
 
@@ -986,7 +1522,7 @@
 
                 showAlert(`Friend request sent to ${selectedFriend.username}!`, 'success');
                 closeAddFriendModal();
-                loadRequests(); // Refresh requests
+                loadRequests();
             } catch (error) {
                 console.error('Failed to send friend request:', error);
                 showAlert('Failed to send friend request: ' + error.message, 'error');
@@ -1032,7 +1568,7 @@
             }
         }
 
-        // MJ Talk Functions
+        // MJ Talk functions
         function startMJTalk(friendId, friendUsername) {
             selectedFriend = { id: friendId, username: friendUsername };
             openMJTalkModal();
@@ -1123,25 +1659,48 @@
             }
         }
 
-        // Utility Functions
-        function showAlert(message, type = 'info') {
-            const alertDiv = document.createElement('div');
-            alertDiv.className = `alert alert-${type}`;
-            alertDiv.textContent = message;
-            
-            document.body.insertBefore(alertDiv, document.body.firstChild);
-            
-            setTimeout(() => {
-                alertDiv.remove();
-            }, 5000);
+        async function initiateRandomMJTalk() {
+            try {
+                showAlert('Looking for an available friend for random MJ Talk...', 'info');
+                
+                const friends = await apiRequest('/api/v1/mj-network/friends');
+                
+                if (!friends.friends || friends.friends.length === 0) {
+                    showAlert('No friends available for random MJ Talk. Add some friends first!', 'error');
+                    return;
+                }
+                
+                const randomFriend = friends.friends[Math.floor(Math.random() * friends.friends.length)];
+                const randomTopics = [
+                    "Check how they're doing",
+                    "Share something interesting", 
+                    "Ask about their day",
+                    "Send some encouragement",
+                    "Catch up on life"
+                ];
+                
+                const randomTopic = randomTopics[Math.floor(Math.random() * randomTopics.length)];
+                
+                const result = await apiRequest('/api/v1/mj-network/mj-talk', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        target_user_id: randomFriend.friend_user_id,
+                        message_purpose: randomTopic,
+                        conversation_topic: `Random MJ Talk: ${randomTopic}`
+                    })
+                });
+                
+                showAlert(`Random MJ Talk started with ${randomFriend.friend_username} about: ${randomTopic}`, 'success');
+                loadConversations();
+                loadDashboardData();
+                
+            } catch (error) {
+                console.error('Random MJ Talk failed:', error);
+                showAlert('Failed to start random MJ Talk: ' + error.message, 'error');
+            }
         }
 
-        function logout() {
-            localStorage.removeItem('authToken');
-            window.location.href = '/login.html';
-        }
-
-        // Location functions (placeholder)
+        // Location functions
         async function enableLocation() {
             if ('geolocation' in navigator) {
                 navigator.geolocation.getCurrentPosition(async (position) => {
@@ -1156,6 +1715,8 @@
                             })
                         });
                         showAlert('Location sharing enabled', 'success');
+                        document.getElementById('location-status').innerHTML = 'Location sharing is enabled';
+                        document.getElementById('location-status').className = 'alert alert-success';
                         loadNearbyUsers();
                     } catch (error) {
                         showAlert('Failed to update location: ' + error.message, 'error');
@@ -1165,6 +1726,29 @@
                 });
             } else {
                 showAlert('Geolocation not supported by this browser', 'error');
+            }
+        }
+
+        async function disableLocation() {
+            try {
+                await apiRequest('/api/v1/mj-network/location', {
+                    method: 'DELETE'
+                });
+                showAlert('Location sharing disabled', 'info');
+                document.getElementById('location-status').innerHTML = 'Location sharing is disabled';
+                document.getElementById('location-status').className = 'alert alert-info';
+                
+                document.getElementById('nearby-users').innerHTML = `
+                    <div class="empty-state">
+                        <h3>Location sharing disabled</h3>
+                        <p>Enable location to discover nearby MJ users</p>
+                        <button class="btn btn-primary" onclick="enableLocation()">Enable Location Sharing</button>
+                    </div>
+                `;
+                
+            } catch (error) {
+                console.error('Failed to disable location:', error);
+                showAlert('Failed to disable location: ' + error.message, 'error');
             }
         }
 
@@ -1181,7 +1765,7 @@
                                 <div class="username">${user.username}</div>
                                 <div class="user-status">${user.distance_km}km away</div>
                             </div>
-                            <button class="btn btn-primary" onclick="sendFriendRequestToUser(${user.user_id}, '${user.username}')">
+                            <button class="btn btn-primary btn-small" onclick="sendFriendRequestToUser(${user.user_id}, '${user.username}')">
                                 Add Friend
                             </button>
                         </div>
@@ -1196,24 +1780,438 @@
                 }
             } catch (error) {
                 console.error('Failed to load nearby users:', error);
+                document.getElementById('nearby-users').innerHTML = '<div class="alert alert-error">Failed to load nearby users</div>';
             }
         }
 
-        async function sendFriendRequestToUser(userId, username) {
+        function sendFriendRequestToUser(userId, username) {
             selectedFriend = { id: userId, username: username };
             document.getElementById('friend-message').value = `Hi ${username}! I found you nearby and would love to connect our MJs!`;
             openAddFriendModal();
         }
 
-        // Auto-refresh data every 30 seconds
-        setInterval(() => {
-            if (document.visibilityState === 'visible') {
-                loadDashboardData();
-                if (document.querySelector('.tab.active').onclick.toString().includes('requests')) {
-                    loadRequests();
-                }
+        // Settings
+        async function saveSettings() {
+            const mjStatus = document.getElementById('mj-status').value;
+            const offlineResponses = document.getElementById('offline-responses').checked;
+            
+            try {
+                await apiRequest('/api/v1/mj-network/settings', {
+                    method: 'PUT',
+                    body: JSON.stringify({
+                        mj_status: mjStatus,
+                        offline_responses_enabled: offlineResponses
+                    })
+                });
+                
+                showAlert('Settings saved successfully!', 'success');
+                
+            } catch (error) {
+                console.error('Failed to save settings:', error);
+                showAlert('Failed to save settings: ' + error.message, 'error');
             }
-        }, 30000);
+        }
+
+        // Message polling
+        async function checkForMJMessages() {
+            try {
+                const response = await apiRequest('/api/v1/messages/pending');
+                
+                if (response.pending_messages && response.pending_messages.length > 0) {
+                    response.pending_messages.forEach(message => {
+                        showAlert(`New MJ message from ${message.from_username}: ${message.content}`, 'info');
+                    });
+                    
+                    // Update dashboard stats
+                    loadDashboardData();
+                }
+            } catch (error) {
+                console.error('Failed to check MJ messages:', error);
+            }
+        }
+
+        function startMessagePolling() {
+            // Temporarily disable polling to stop the 500 errors
+            console.log('Message polling disabled temporarily due to server issues');
+            return;
+            
+            checkForMJMessages();
+            setInterval(() => {
+                if (document.visibilityState === 'visible') {
+                    checkForMJMessages();
+                }
+            }, 30000); // Check every 30 seconds
+        }
+
+        // Utility functions
+        function showAlert(message, type = 'info') {
+            const alertDiv = document.createElement('div');
+            alertDiv.className = `alert alert-${type}`;
+            alertDiv.style.position = 'fixed';
+            alertDiv.style.top = '20px';
+            alertDiv.style.right = '20px';
+            alertDiv.style.zIndex = '9999';
+            alertDiv.style.minWidth = '300px';
+            alertDiv.textContent = message;
+            
+            document.body.appendChild(alertDiv);
+            
+            setTimeout(() => {
+                if (alertDiv.parentNode) {
+                    alertDiv.remove();
+                }
+            }, 5000);
+        }
+
+        function logout() {
+            localStorage.removeItem('authToken');
+            authToken = null;
+            currentUser = null;
+            showLoginScreen();
+            showAlert('Logged out successfully', 'info');
+        }
+
+        function viewConversation(conversationId) {
+            // Create modal to view conversation messages
+            const modalHTML = `
+                <div id="conversation-modal" class="modal active">
+                    <div class="modal-content" style="max-width: 700px; max-height: 80vh;">
+                        <div class="modal-header">
+                            <h3>MJ Conversation Messages</h3>
+                            <button class="modal-close" onclick="closeConversationModal()">&times;</button>
+                        </div>
+                        <div class="chat-container" style="height: 400px;">
+                            <div class="chat-messages" id="conversation-messages">
+                                <div class="loading">
+                                    <div class="spinner"></div>
+                                    Loading messages...
+                                </div>
+                            </div>
+                        </div>
+                        <div style="display: flex; gap: 15px; justify-content: center; margin-top: 15px;">
+                            <button class="btn btn-secondary" onclick="closeConversationModal()">Close</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            // Remove existing modal if present
+            const existingModal = document.getElementById('conversation-modal');
+            if (existingModal) existingModal.remove();
+            
+            // Add modal to page
+            document.body.insertAdjacentHTML('beforeend', modalHTML);
+            
+            // Load conversation messages
+            loadConversationMessages(conversationId);
+        }
+
+        async function loadConversationMessages(conversationId) {
+            const messagesContainer = document.getElementById('conversation-messages');
+            
+            try {
+                const response = await apiRequest(`/api/v1/mj-network/conversations/${conversationId}/messages`);
+                
+                if (response.messages && response.messages.length > 0) {
+                    messagesContainer.innerHTML = response.messages.map(msg => `
+                        <div class="message ${msg.from_user_id === currentUser.id ? 'sent' : 'received'}">
+                            <strong>${msg.from_username}:</strong> ${msg.message_content}
+                            <div style="font-size: 11px; opacity: 0.7; margin-top: 5px;">
+                                ${new Date(msg.created_at).toLocaleString()}
+                            </div>
+                        </div>
+                    `).join('');
+                } else {
+                    messagesContainer.innerHTML = `
+                        <div class="empty-state">
+                            <h3>No messages yet</h3>
+                            <p>This conversation hasn't started yet</p>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                console.error('Failed to load conversation messages:', error);
+                messagesContainer.innerHTML = '<div class="alert alert-error">Failed to load messages</div>';
+            }
+        }
+
+        function closeConversationModal() {
+            const modal = document.getElementById('conversation-modal');
+            if (modal) modal.remove();
+        }
+
+        // Auto-refresh data periodically
+        setInterval(() => {
+            if (document.visibilityState === 'visible' && currentUser) {
+                loadDashboardData();
+            }
+        }, 300000); // Refresh every 5 minutes
+
+
+        // Draft Management Functions
+        let currentDraftMessage = null;
+
+        // Load pending responses
+        async function loadPendingResponses() {
+            const responsesList = document.getElementById('pending-responses-list');
+            const responseCount = document.getElementById('pending-responses-count');
+            
+            try {
+                const pendingData = await apiRequest('/api/v1/mj-network/drafts/pending');
+                
+                responseCount.textContent = pendingData.count || 0;
+                
+                // Update dashboard stat
+                const dashboardStat = document.getElementById('stat-pending-responses');
+                if (dashboardStat) {
+                    dashboardStat.textContent = pendingData.count || 0;
+                }
+                
+                if (pendingData.pending_responses && pendingData.pending_responses.length > 0) {
+                    responsesList.innerHTML = pendingData.pending_responses.map(response => `
+                        <div class="list-item" style="border-left: 4px solid #00ff88;">
+                            <div class="user-avatar">🤖</div>
+                            <div class="user-details">
+                                <div class="username">
+                                    Response to: ${esc(response.original_request)}
+                                </div>
+                                <div class="user-status">
+                                    Preview: ${esc(response.draft_content.substring(0, 80))}${response.draft_content.length > 80 ? '...' : ''}
+                                </div>
+                                <div class="user-status">
+                                    Created: ${new Date(response.created_at).toLocaleDateString()} • 
+                                    Tokens: ${response.tokens_used} • 
+                                    Memories: ${response.memories_used ? response.memories_used.length : 0}
+                                </div>
+                            </div>
+                            <div style="display: flex; gap: 10px;">
+                                <button class="btn btn-primary btn-small" onclick="reviewDraft(${response.draft_message_id})">
+                                    Review & Approve
+                                </button>
+                                <button class="btn btn-danger btn-small" onclick="quickDeleteDraft(${response.draft_message_id})">
+                                    Delete
+                                </button>
+                            </div>
+                        </div>
+                    `).join('');
+                } else {
+                    responsesList.innerHTML = `
+                        <div class="empty-state">
+                            <h3>No pending responses</h3>
+                            <p>Your MJ hasn't generated any draft responses that need approval.</p>
+                            <p>When friends' MJs send messages, your MJ will create draft responses for you to review.</p>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                console.error('Failed to load pending responses:', error);
+                responsesList.innerHTML = '<div class="alert alert-error">Failed to load pending responses</div>';
+            }
+        }
+        function esc(str) {
+            if (!str) return '';
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+                // Review individual draft
+        async function reviewDraft(messageId) {
+            try {
+                const pendingData = await apiRequest('/api/v1/mj-network/drafts/pending');
+                const draftResponse = pendingData.pending_responses.find(r => r.draft_message_id === messageId);
+                
+                if (!draftResponse) {
+                    showAlert('Draft response not found', 'error');
+                    return;
+                }
+                
+                currentDraftMessage = draftResponse;
+                
+                document.getElementById('original-request-text').textContent = draftResponse.original_request || 'No request content';
+                document.getElementById('draft-content').value = draftResponse.draft_content;
+                
+                const metadata = [];
+                if (draftResponse.memories_used && draftResponse.memories_used.length > 0) {
+                    metadata.push(`${draftResponse.memories_used.length} memories used`);
+                }
+                if (draftResponse.tokens_used) {
+                    metadata.push(`${draftResponse.tokens_used} tokens`);
+                }
+                metadata.push(`Created ${new Date(draftResponse.created_at).toLocaleString()}`);
+                
+                document.getElementById('draft-metadata').textContent = metadata.join(' • ');
+                document.getElementById('draft-response-modal').classList.add('active');
+                document.getElementById('draft-content').focus();
+                
+            } catch (error) {
+                console.error('Failed to load draft details:', error);
+                showAlert('Failed to load draft details: ' + error.message, 'error');
+            }
+        }
+
+        function closeDraftModal() {
+            document.getElementById('draft-response-modal').classList.remove('active');
+            currentDraftMessage = null;
+        }
+
+        async function approveDraft() {
+            if (!currentDraftMessage) {
+                showAlert('No draft selected', 'error');
+                return;
+            }
+            
+            const approveBtn = document.getElementById('approve-draft-btn');
+            const originalText = approveBtn.textContent;
+            
+            try {
+                approveBtn.disabled = true;
+                approveBtn.textContent = 'Sending...';
+                
+                const draftContent = document.getElementById('draft-content').value.trim();
+                
+                if (!draftContent) {
+                    showAlert('Response content cannot be empty', 'error');
+                    return;
+                }
+                
+                const wasEdited = draftContent !== currentDraftMessage.draft_content;
+                
+                if (wasEdited) {
+                    await apiRequest('/api/v1/mj-network/drafts/edit-approve', {
+                        method: 'PUT',
+                        body: JSON.stringify({
+                            message_id: currentDraftMessage.draft_message_id,
+                            new_content: draftContent
+                        })
+                    });
+                    showAlert('Draft edited and sent successfully!', 'success');
+                } else {
+                    await apiRequest('/api/v1/mj-network/drafts/approve', {
+                        method: 'POST',
+                        body: JSON.stringify({
+                            message_id: currentDraftMessage.draft_message_id
+                        })
+                    });
+                    showAlert('Draft approved and sent successfully!', 'success');
+                }
+                
+                closeDraftModal();
+                loadPendingResponses();
+                loadDashboardData();
+                loadConversations();
+                
+            } catch (error) {
+                console.error('Failed to approve draft:', error);
+                showAlert('Failed to send response: ' + error.message, 'error');
+            } finally {
+                approveBtn.disabled = false;
+                approveBtn.textContent = originalText;
+            }
+        }
+
+        async function deleteDraft() {
+            if (!currentDraftMessage) {
+                showAlert('No draft selected', 'error');
+                return;
+            }
+            
+            if (!confirm('Are you sure you want to delete this draft response? This cannot be undone.')) {
+                return;
+            }
+            
+            const deleteBtn = document.getElementById('delete-draft-btn');
+            const originalText = deleteBtn.textContent;
+            
+            try {
+                deleteBtn.disabled = true;
+                deleteBtn.textContent = 'Deleting...';
+                
+                await apiRequest(`/api/v1/mj-network/drafts/${currentDraftMessage.draft_message_id}`, {
+                    method: 'DELETE'
+                });
+                
+                showAlert('Draft deleted successfully', 'info');
+                closeDraftModal();
+                loadPendingResponses();
+                loadDashboardData();
+                
+            } catch (error) {
+                console.error('Failed to delete draft:', error);
+                showAlert('Failed to delete draft: ' + error.message, 'error');
+            } finally {
+                deleteBtn.disabled = false;
+                deleteBtn.textContent = originalText;
+            }
+        }
+
+        async function quickDeleteDraft(messageId) {
+            if (!confirm('Delete this draft response without reviewing it?')) {
+                return;
+            }
+            
+            try {
+                await apiRequest(`/api/v1/mj-network/drafts/${messageId}`, {
+                    method: 'DELETE'
+                });
+                
+                showAlert('Draft deleted', 'info');
+                loadPendingResponses();
+                loadDashboardData();
+                
+            } catch (error) {
+                console.error('Failed to delete draft:', error);
+                showAlert('Failed to delete draft: ' + error.message, 'error');
+            }
+        }
+
+        // Update existing functions
+        const originalShowSection = showSection;
+        showSection = function(sectionId) {
+            originalShowSection(sectionId);
+            if (sectionId === 'pending-responses') {
+                loadPendingResponses();
+            }
+        };
+
+        const originalLoadDashboardData = loadDashboardData;
+        loadDashboardData = async function() {
+            try {
+                await originalLoadDashboardData();
+                
+                // Load pending responses count for dashboard
+                try {
+                    const pendingData = await apiRequest('/api/v1/mj-network/drafts/pending');
+                    const dashboardStat = document.getElementById('stat-pending-responses');
+                    if (dashboardStat) {
+                        dashboardStat.textContent = pendingData.count || 0;
+                    }
+                } catch (error) {
+                    console.error('Failed to load pending responses count:', error);
+                }
+            } catch (error) {
+                console.error('Dashboard loading failed:', error);
+            }
+        };
+
+        // Auto-refresh pending responses
+        setInterval(async () => {
+            if (document.getElementById('pending-responses').classList.contains('active')) {
+                loadPendingResponses();
+            }
+            
+            try {
+                const pendingData = await apiRequest('/api/v1/mj-network/drafts/pending');
+                const dashboardStat = document.getElementById('stat-pending-responses');
+                if (dashboardStat) {
+                    dashboardStat.textContent = pendingData.count || 0;
+                }
+            } catch (error) {
+                // Silently fail for background updates
+            }
+        }, 120000);
     </script>
 </body>
 </html>

@@ -49,7 +49,7 @@ class GeminiClient:
                 "confidence": 0.7-1.0,
                 "importance": 0.1-1.0,
                 "context": "Brief context about when/how this was mentioned",
-                "relevance_tags": ["tag1", "tag2"]
+                "tags": ["tag1", "tag2"]
             }}
         ]
         

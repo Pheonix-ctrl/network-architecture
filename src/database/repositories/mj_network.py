@@ -222,8 +222,11 @@ class NetworkRelationshipRepository(BaseRepository[NetworkRelationship]):
                     and_(NetworkRelationship.user_id == user_b_id, NetworkRelationship.friend_user_id == user_a_id)
                 )
             )
+            .order_by(NetworkRelationship.id)
+            .limit(1)  # Take just the first relationship found
         )
         return result.scalar_one_or_none()
+
     
     async def get_user_friends(self, user_id: int, status: str = "active") -> List[NetworkRelationship]:
         """Get all friends for a user - for friends list UI"""
@@ -693,15 +696,17 @@ class MJConversationRepository(BaseRepository[MJConversation]):
         await self.db.refresh(conversation)
         return conversation
     
-    async def update_last_message(self, conversation_id: int) -> bool:
+    async def update_last_message(self, conversation_id: int, increment: bool = True) -> bool:
         """Update last message timestamp and increment message count"""
+        values = {"last_message_at": func.now()}
+        
+        if increment:
+            values["message_count"] = MJConversation.message_count + 1
+            
         result = await self.db.execute(
             update(MJConversation)
             .where(MJConversation.id == conversation_id)
-            .values(
-                last_message_at=func.now(),
-                message_count=MJConversation.message_count + 1
-            )
+            .values(**values)
         )
         await self.db.commit()
         return result.rowcount > 0
@@ -777,7 +782,12 @@ class MJMessageRepository(BaseRepository[MJMessage]):
         """Get messages for a conversation"""
         result = await self.db.execute(
             select(MJMessage)
-            .where(MJMessage.conversation_id == conversation_id)
+            .where(
+                and_(
+                    MJMessage.conversation_id == conversation_id,
+                    MJMessage.approval_status.in_(["sent", "approved"])  # EXCLUDE DRAFTS
+                )
+            )
             .options(
                 selectinload(MJMessage.from_user),
                 selectinload(MJMessage.to_user)
@@ -799,9 +809,10 @@ class MJMessageRepository(BaseRepository[MJMessage]):
         openai_response_raw: Optional[str] = None,
         privacy_settings_applied: Optional[Dict] = None,
         user_memories_used: Optional[Dict] = None,
-        tokens_used: int = 0
+        tokens_used: int = 0,
+        approval_status: str = "sent",
+        delivery_status: str = DeliveryStatus.PENDING.value,  # <- optional if DB default exists
     ) -> MJMessage:
-        """Create new MJ message - core of your system"""
         message = MJMessage(
             conversation_id=conversation_id,
             from_user_id=from_user_id,
@@ -812,13 +823,15 @@ class MJMessageRepository(BaseRepository[MJMessage]):
             openai_response_raw=openai_response_raw,
             privacy_settings_applied=privacy_settings_applied,
             user_memories_used=user_memories_used,
-            tokens_used=tokens_used
+            tokens_used=tokens_used,
+            approval_status=approval_status,
+            delivery_status=delivery_status,  # <- optional if DB default exists
         )
-        
         self.db.add(message)
         await self.db.commit()
         await self.db.refresh(message)
         return message
+
     
     async def mark_as_delivered(self, message_id: int) -> bool:
         """Mark message as delivered"""

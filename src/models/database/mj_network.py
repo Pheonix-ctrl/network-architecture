@@ -267,6 +267,7 @@ class MJMessage(Base):
     response_time_ms = Column(Integer, nullable=True)
     
     delivery_status = Column(String(20), default=DeliveryStatus.PENDING.value, index=True)
+    approval_status = Column(String(20), default="sent", index=True)
     delivered_at = Column(DateTime(timezone=True), nullable=True)
     read_at = Column(DateTime(timezone=True), nullable=True)
     
@@ -281,6 +282,7 @@ class MJMessage(Base):
         CheckConstraint("message_type IN ('text','status_update','check_in','question','response')", name='check_message_type'),
         CheckConstraint("delivery_status IN ('pending','delivered','read','failed')", name='check_delivery_status'),
         CheckConstraint('from_user_id != to_user_id', name='check_different_message_users'),
+        CheckConstraint("approval_status IN ('draft','approved','sent')", name='check_approval_status'),
     )
 
 class PendingMessage(Base):

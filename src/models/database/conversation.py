@@ -42,4 +42,3 @@ class Conversation(Base):
     
     # Relationships
     user = relationship("User", back_populates="conversations")
-    memories = relationship("Memory", back_populates="source_conversation")

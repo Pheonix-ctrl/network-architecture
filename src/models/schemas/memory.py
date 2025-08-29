@@ -12,7 +12,7 @@ class MemoryBase(BaseModel):
 class MemoryCreate(MemoryBase):
     confidence: Optional[float] = Field(default=0.8, ge=0.0, le=1.0)
     importance: Optional[float] = Field(default=0.5, ge=0.0, le=1.0)
-    relevance_tags: Optional[List[str]] = []
+    tags: Optional[List[str]] = []
 
 class MemoryUpdate(BaseModel):
     fact: Optional[str] = None
@@ -26,9 +26,8 @@ class MemoryResponse(MemoryBase):
     confidence: float
     importance: float
     access_count: int
-    relevance_tags: List[str]
+    tags: List[str]
     created_at: datetime
-    last_accessed: datetime
     is_validated: bool
     
     class Config:
