@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MJ Network - Complete Working Interface</title>
+    <title>MJ Network - Auto-Chat System</title>
     <style>
         * {
             margin: 0;
@@ -141,10 +141,9 @@
 
         .grid-2 { grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); }
         .grid-3 { grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
-        .grid-4 { grid-template-columns: repeat(4, 1fr); }
 
         @media (max-width: 768px) {
-            .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; }
+            .grid-2, .grid-3 { grid-template-columns: 1fr; }
         }
 
         /* Buttons */
@@ -301,6 +300,22 @@
             font-size: 13px;
             color: #888;
         }
+
+        /* Session Status Badges */
+        .session-badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .session-badge.pending { background: #ffaa00; color: #000; }
+        .session-badge.active { background: #00ff88; color: #000; }
+        .session-badge.completed { background: #666; color: #fff; }
+        .session-badge.expired { background: #ff4444; color: #fff; }
 
         /* Modal */
         .modal {
@@ -530,7 +545,7 @@
             }
         }
 
-        /* Add transition effects */
+        /* Transitions */
         .btn:disabled {
             opacity: 0.6;
             cursor: not-allowed;
@@ -583,7 +598,8 @@
             <button class="nav-tab" onclick="showSection('mj-chat')">MJ Chat</button>
             <button class="nav-tab" onclick="showSection('friends')">Friends</button>
             <button class="nav-tab" onclick="showSection('requests')">Requests</button>
-            <button class="nav-tab" onclick="showSection('pending-responses')">Pending Responses</button>
+            <button class="nav-tab" onclick="showSection('pending-approvals')">Pending Approvals</button>
+            <button class="nav-tab" onclick="showSection('active-sessions')">Active Sessions</button>
             <button class="nav-tab" onclick="showSection('conversations')">MJ Talks</button>
             <button class="nav-tab" onclick="showSection('discovery')">Discovery</button>
             <button class="nav-tab" onclick="showSection('settings')">Settings</button>
@@ -613,9 +629,13 @@
                             <div class="stat-value" id="stat-messages-received">0</div>
                             <div class="stat-label">Received</div>
                         </div>
-                        <div class="stat-card" onclick="showSection('pending-responses')" style="cursor: pointer; transition: all 0.3s ease;" onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'">
-                            <div class="stat-value" id="stat-pending-responses">0</div>
-                            <div class="stat-label">Pending Responses</div>
+                        <div class="stat-card" onclick="showSection('pending-approvals')" style="cursor: pointer; transition: all 0.3s ease;" onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'">
+                            <div class="stat-value" id="stat-pending-approvals">0</div>
+                            <div class="stat-label">Pending Approvals</div>
+                        </div>
+                        <div class="stat-card" onclick="showSection('active-sessions')" style="cursor: pointer; transition: all 0.3s ease;" onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'">
+                            <div class="stat-value" id="stat-active-sessions">0</div>
+                            <div class="stat-label">Active Sessions</div>
                         </div>
                     </div>
                 </div>
@@ -722,20 +742,39 @@
             </div>
         </div>
 
-                <!-- Pending Responses Section -->
-        <div id="pending-responses" class="section">
+        <!-- Pending Approvals Section (NEW) -->
+        <div id="pending-approvals" class="section">
             <div class="card">
                 <div class="card-header">
-                    <h3 class="card-title">Pending MJ Responses</h3>
+                    <h3 class="card-title">Pending Objective Approvals</h3>
                     <div style="display: flex; gap: 10px; align-items: center;">
-                        <span class="btn btn-secondary btn-small" id="pending-responses-count">0</span>
-                        <button class="btn btn-secondary btn-small" onclick="loadPendingResponses()">Refresh</button>
+                        <span class="btn btn-secondary btn-small" id="pending-approvals-count">0</span>
+                        <button class="btn btn-secondary btn-small" onclick="loadPendingApprovals()">Refresh</button>
                     </div>
                 </div>
-                <div id="pending-responses-list">
+                <div id="pending-approvals-list">
                     <div class="loading">
                         <div class="spinner"></div>
-                        Loading pending responses...
+                        Loading pending approvals...
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Active Sessions Section (NEW) -->
+        <div id="active-sessions" class="section">
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">Active Auto-Chat Sessions</h3>
+                    <div style="display: flex; gap: 10px; align-items: center;">
+                        <span class="btn btn-secondary btn-small" id="active-sessions-count">0</span>
+                        <button class="btn btn-secondary btn-small" onclick="loadActiveSessions()">Refresh</button>
+                    </div>
+                </div>
+                <div id="active-sessions-list">
+                    <div class="loading">
+                        <div class="spinner"></div>
+                        Loading active sessions...
                     </div>
                 </div>
             </div>
@@ -862,7 +901,7 @@
     <div id="mj-talk-modal" class="modal">
         <div class="modal-content">
             <div class="modal-header">
-                <h3>Start MJ-to-MJ Conversation</h3>
+                <h3>Start Auto-Chat Session</h3>
                 <button class="modal-close" onclick="closeMJTalkModal()">&times;</button>
             </div>
             
@@ -874,68 +913,74 @@
             </div>
             
             <div class="form-group">
-                <label class="form-label">Purpose</label>
+                <label class="form-label">Conversation Objective</label>
                 <select class="form-input" id="mj-talk-purpose">
                     <option value="Ask how they're doing">Ask how they're doing</option>
                     <option value="Check on their health">Check on their health</option>
                     <option value="Share an update">Share an update</option>
                     <option value="Ask about their day">Ask about their day</option>
                     <option value="Send encouragement">Send encouragement</option>
-                    <option value="Custom message">Custom message</option>
+                    <option value="Plan something together">Plan something together</option>
+                    <option value="Catch up on life">Catch up on life</option>
+                    <option value="Custom objective">Custom objective</option>
                 </select>
             </div>
             
             <div class="form-group" id="custom-purpose-group" style="display: none;">
-                <label class="form-label">Custom Purpose</label>
+                <label class="form-label">Custom Objective</label>
                 <textarea class="form-input form-textarea" id="custom-purpose" 
-                         placeholder="Describe what you want your MJ to talk about..."></textarea>
+                         placeholder="Describe what you want the MJs to talk about..."></textarea>
             </div>
+
             
             <div style="display: flex; gap: 15px; justify-content: flex-end;">
                 <button class="btn btn-secondary" onclick="closeMJTalkModal()">Cancel</button>
-                <button class="btn btn-primary" onclick="initiateMJTalk()">Start MJ Conversation</button>
+                <button class="btn btn-primary" onclick="initiateMJTalk()">Create Auto-Chat Session</button>
             </div>
         </div>
     </div>
-    <!-- Draft Response Modal -->
-    <div id="draft-response-modal" class="modal">
+
+    <!-- Objective Approval Modal (NEW) -->
+    <div id="objective-approval-modal" class="modal">
         <div class="modal-content" style="max-width: 600px;">
             <div class="modal-header">
-                <h3>Review MJ Draft Response</h3>
-                <button class="modal-close" onclick="closeDraftModal()">&times;</button>
+                <h3>Approve Auto-Chat Objective</h3>
+                <button class="modal-close" onclick="closeApprovalModal()">&times;</button>
             </div>
             
             <div class="card" style="margin-bottom: 20px; background: rgba(0, 136, 255, 0.1); border-color: rgba(0, 136, 255, 0.3);">
-                <div style="font-weight: 600; margin-bottom: 10px;">Original Request:</div>
-                <div id="original-request-text" style="font-style: italic; color: #ccc;"></div>
+                <div style="font-weight: 600; margin-bottom: 10px;">Conversation Objective:</div>
+                <div id="approval-objective-text" style="font-size: 18px; color: #00ff88; margin-bottom: 15px;"></div>
+                <div style="display: flex; justify-content: space-between; font-size: 14px; color: #ccc;">
+                    <span>From: <span id="approval-from-user"></span></span>
+                    <span>Max turns: <span id="approval-max-turns"></span></span>
+                </div>
             </div>
             
-            <div class="card" style="margin-bottom: 20px; background: rgba(0, 255, 136, 0.1); border-color: rgba(0, 255, 136, 0.3);">
-                <div style="font-weight: 600; margin-bottom: 10px;">Your MJ's Draft Response:</div>
-                <div style="margin-bottom: 15px;">
-                    <textarea class="form-input form-textarea" id="draft-content" style="min-height: 120px;" placeholder="Your MJ's response..."></textarea>
-                </div>
-                <div id="draft-metadata" style="font-size: 12px; color: #888;"></div>
+            <div class="alert alert-info" style="margin-bottom: 20px;">
+                <strong>Auto-Chat Session:</strong> Once approved, both MJs will automatically chat back and forth to complete this objective. No further approval needed for individual messages.
             </div>
             
             <div style="display: flex; gap: 15px; justify-content: flex-end;">
-                <button class="btn btn-danger" onclick="deleteDraft()" id="delete-draft-btn">
-                    Delete Draft
+                <button class="btn btn-danger" onclick="rejectObjective()" id="reject-objective-btn">
+                    Reject
                 </button>
-                <button class="btn btn-secondary" onclick="closeDraftModal()">
-                    Cancel
-                </button>
-                <button class="btn btn-primary" onclick="approveDraft()" id="approve-draft-btn">
-                    Approve & Send
+                <button class="btn btn-primary" onclick="approveObjective()" id="approve-objective-btn">
+                    Approve Auto-Chat
                 </button>
             </div>
         </div>
     </div>
+
     <script>
         // Global state
         let authToken = localStorage.getItem('authToken');
         let currentUser = null;
         let selectedFriend = null;
+        let messageRefreshInterval = null;
+        let isMessageDisplayOpen = false;
+        let currentConversationId = null;
+        let currentApprovalData = null;
         const API_BASE = 'http://localhost:8000';
 
         // Initialize app
@@ -1113,10 +1158,43 @@
                     document.getElementById('stat-messages-received').textContent = statusData.mj_registry.total_messages_received || 0;
                 }
 
+                // Load pending approvals and active sessions counts
+                await loadPendingApprovalsCount();
+                await loadActiveSessionsCount();
                 await loadRecentActivity();
             } catch (error) {
                 console.error('Failed to load dashboard data:', error);
                 showAlert('Failed to load dashboard data', 'error');
+            }
+        }
+
+        async function loadPendingApprovalsCount() {
+            try {
+                const approvals = await apiRequest('/api/v1/mj-network/objectives/pending');
+                const count = approvals.count || 0;
+                document.getElementById('stat-pending-approvals').textContent = count;
+                
+                const countElement = document.getElementById('pending-approvals-count');
+                if (countElement) {
+                    countElement.textContent = count;
+                }
+            } catch (error) {
+                console.error('Failed to load pending approvals count:', error);
+            }
+        }
+
+        async function loadActiveSessionsCount() {
+            try {
+                const sessions = await apiRequest('/api/v1/mj-network/sessions/active');
+                const count = sessions.count || 0;
+                document.getElementById('stat-active-sessions').textContent = count;
+                
+                const countElement = document.getElementById('active-sessions-count');
+                if (countElement) {
+                    countElement.textContent = count;
+                }
+            } catch (error) {
+                console.error('Failed to load active sessions count:', error);
             }
         }
 
@@ -1212,14 +1290,270 @@
                 case 'discovery':
                     loadNearbyUsers();
                     break;
-                case 'pending-responses':
-                    loadPendingResponses();
+                case 'pending-approvals':
+                    loadPendingApprovals();
+                    break;
+                case 'active-sessions':
+                    loadActiveSessions();
                     break;
             }
         }
 
-        function openPendingResponses() {
-            showSection('pending-responses');
+        // NEW: Load pending objective approvals
+        async function loadPendingApprovals() {
+            const approvalsList = document.getElementById('pending-approvals-list');
+            const approvalsCount = document.getElementById('pending-approvals-count');
+            
+            try {
+                const approvalsData = await apiRequest('/api/v1/mj-network/objectives/pending');
+                
+                approvalsCount.textContent = approvalsData.count || 0;
+                
+                if (approvalsData.pending_approvals && approvalsData.pending_approvals.length > 0) {
+                    approvalsList.innerHTML = approvalsData.pending_approvals.map(approval => `
+                        <div class="list-item" style="border-left: 4px solid #ffaa00;">
+                            <div class="user-avatar">🎯</div>
+                            <div class="user-details">
+                                <div class="username">
+                                    <span class="session-badge pending">Pending</span>
+                                    ${esc(approval.objective)}
+                                </div>
+                                <div class="user-status">
+                                    From: ${approval.initiated_by_username || 'Unknown'} • 
+                                    Max turns: ${approval.max_turns} • 
+                                    Topic: ${esc(approval.conversation_topic || 'None')}
+                                </div>
+                                <div class="user-status">
+                                    Created: ${new Date(approval.created_at).toLocaleDateString()}
+                                </div>
+                            </div>
+                            <div style="display: flex; gap: 10px;">
+                                <button class="btn btn-primary btn-small" onclick="reviewObjective(${approval.conversation_id})">
+                                    Review & Approve
+                                </button>
+                                <button class="btn btn-danger btn-small" onclick="quickRejectObjective(${approval.conversation_id})">
+                                    Reject
+                                </button>
+                            </div>
+                        </div>
+                    `).join('');
+                } else {
+                    approvalsList.innerHTML = `
+                        <div class="empty-state">
+                            <h3>No pending approvals</h3>
+                            <p>No conversation objectives are waiting for your approval.</p>
+                            <p>When friends want to start auto-chat sessions with your MJ, they'll appear here.</p>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                console.error('Failed to load pending approvals:', error);
+                approvalsList.innerHTML = '<div class="alert alert-error">Failed to load pending approvals</div>';
+            }
+        }
+
+        // NEW: Load active auto-chat sessions
+        async function loadActiveSessions() {
+            const sessionsList = document.getElementById('active-sessions-list');
+            const sessionsCount = document.getElementById('active-sessions-count');
+            
+            try {
+                const sessionsData = await apiRequest('/api/v1/mj-network/sessions/active');
+                
+                sessionsCount.textContent = sessionsData.count || 0;
+                
+                if (sessionsData.active_sessions && sessionsData.active_sessions.length > 0) {
+                    sessionsList.innerHTML = sessionsData.active_sessions.map(session => `
+                        <div class="list-item" style="border-left: 4px solid #00ff88;">
+                            <div class="user-avatar">🤖</div>
+                            <div class="user-details">
+                                <div class="username">
+                                    <span class="session-badge active">Active</span>
+                                    ${esc(session.objective)}
+                                </div>
+                                <div class="user-status">
+                                    With: ${session.other_username} • 
+                                    Turn: ${session.turn_count}/${session.max_turns} • 
+                                    ${session.next_speaker_id === currentUser.id ? 'Your MJ\'s turn' : 'Their MJ\'s turn'}
+                                </div>
+                                <div class="user-status">
+                                    Expires: ${new Date(session.session_expires_at).toLocaleString()}
+                                </div>
+                            </div>
+                            <div style="display: flex; gap: 10px;">
+                                <button class="btn btn-secondary btn-small" onclick="viewSessionMessages(${session.conversation_id})">
+                                    View Messages
+                                </button>
+                                <button class="btn btn-danger btn-small" onclick="endSession(${session.conversation_id})">
+                                    End Session
+                                </button>
+                            </div>
+                        </div>
+                    `).join('');
+                } else {
+                    sessionsList.innerHTML = `
+                        <div class="empty-state">
+                            <h3>No active sessions</h3>
+                            <p>No auto-chat sessions are currently running.</p>
+                            <p>Start an MJ Talk to create automated conversations!</p>
+                            <button class="btn btn-primary" onclick="openMJTalkModal()">Start MJ Talk</button>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                console.error('Failed to load active sessions:', error);
+                sessionsList.innerHTML = '<div class="alert alert-error">Failed to load active sessions</div>';
+            }
+        }
+
+        // NEW: Review objective for approval
+        async function reviewObjective(conversationId) {
+            try {
+                const approvalsData = await apiRequest('/api/v1/mj-network/objectives/pending');
+                const approval = approvalsData.pending_approvals.find(a => a.conversation_id === conversationId);
+                
+                if (!approval) {
+                    showAlert('Objective approval not found', 'error');
+                    return;
+                }
+                
+                currentApprovalData = approval;
+                
+                document.getElementById('approval-objective-text').textContent = approval.objective;
+                document.getElementById('approval-from-user').textContent = approval.initiated_by_username || 'Unknown';
+                document.getElementById('approval-max-turns').textContent = approval.max_turns;
+                document.getElementById('objective-approval-modal').classList.add('active');
+                
+            } catch (error) {
+                console.error('Failed to load objective details:', error);
+                showAlert('Failed to load objective details: ' + error.message, 'error');
+            }
+        }
+
+        function closeApprovalModal() {
+            document.getElementById('objective-approval-modal').classList.remove('active');
+            currentApprovalData = null;
+        }
+
+        async function approveObjective() {
+            if (!currentApprovalData) {
+                showAlert('No objective selected', 'error');
+                return;
+            }
+            
+            const approveBtn = document.getElementById('approve-objective-btn');
+            const originalText = approveBtn.textContent;
+            
+            try {
+                approveBtn.disabled = true;
+                approveBtn.textContent = 'Approving...';
+                
+                await apiRequest('/api/v1/mj-network/objectives/approve', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        conversation_id: currentApprovalData.conversation_id,
+                        approved: true
+                    })
+                });
+                
+                showAlert('Objective approved! Auto-chat session started.', 'success');
+                closeApprovalModal();
+                loadPendingApprovals();
+                loadActiveSessions();
+                loadDashboardData();
+                loadConversations();
+                
+            } catch (error) {
+                console.error('Failed to approve objective:', error);
+                showAlert('Failed to approve objective: ' + error.message, 'error');
+            } finally {
+                approveBtn.disabled = false;
+                approveBtn.textContent = originalText;
+            }
+        }
+
+        async function rejectObjective() {
+            if (!currentApprovalData) {
+                showAlert('No objective selected', 'error');
+                return;
+            }
+            
+            const rejectBtn = document.getElementById('reject-objective-btn');
+            const originalText = rejectBtn.textContent;
+            
+            try {
+                rejectBtn.disabled = true;
+                rejectBtn.textContent = 'Rejecting...';
+                
+                await apiRequest('/api/v1/mj-network/objectives/approve', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        conversation_id: currentApprovalData.conversation_id,
+                        approved: false
+                    })
+                });
+                
+                showAlert('Objective rejected', 'info');
+                closeApprovalModal();
+                loadPendingApprovals();
+                loadDashboardData();
+                
+            } catch (error) {
+                console.error('Failed to reject objective:', error);
+                showAlert('Failed to reject objective: ' + error.message, 'error');
+            } finally {
+                rejectBtn.disabled = false;
+                rejectBtn.textContent = originalText;
+            }
+        }
+
+        async function quickRejectObjective(conversationId) {
+            if (!confirm('Reject this auto-chat objective without reviewing it?')) {
+                return;
+            }
+            
+            try {
+                await apiRequest('/api/v1/mj-network/objectives/approve', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        conversation_id: conversationId,
+                        approved: false
+                    })
+                });
+                
+                showAlert('Objective rejected', 'info');
+                loadPendingApprovals();
+                loadDashboardData();
+                
+            } catch (error) {
+                console.error('Failed to reject objective:', error);
+                showAlert('Failed to reject objective: ' + error.message, 'error');
+            }
+        }
+
+        async function viewSessionMessages(conversationId) {
+            viewConversation(conversationId);
+        }
+
+        async function endSession(conversationId) {
+            if (!confirm('End this auto-chat session? The MJs will stop talking.')) {
+                return;
+            }
+            
+            try {
+                // Note: You'll need to implement this endpoint
+                await apiRequest(`/api/v1/mj-network/sessions/${conversationId}/end`, {
+                    method: 'POST'
+                });
+                
+                showAlert('Session ended', 'info');
+                loadActiveSessions();
+                loadDashboardData();
+                
+            } catch (error) {
+                console.error('Failed to end session:', error);
+                showAlert('Failed to end session: ' + error.message, 'error');
+            }
         }
 
         // MJ Chat functionality - Use WebSocket
@@ -1613,7 +1947,7 @@
             
             if (purposeSelect) {
                 purposeSelect.addEventListener('change', function() {
-                    if (this.value === 'Custom message') {
+                    if (this.value === 'Custom objective') {
                         customGroup.style.display = 'block';
                     } else {
                         customGroup.style.display = 'none';
@@ -1627,15 +1961,16 @@
             const purpose = document.getElementById('mj-talk-purpose').value;
             const customPurpose = document.getElementById('custom-purpose').value;
 
+
             if (!targetUserId) {
                 showAlert('Please select a friend', 'error');
                 return;
             }
 
-            const messagePurpose = purpose === 'Custom message' ? customPurpose : purpose;
+            const objective = purpose === 'Custom objective' ? customPurpose : purpose;
 
-            if (!messagePurpose) {
-                showAlert('Please specify the conversation purpose', 'error');
+            if (!objective) {
+                showAlert('Please specify the conversation objective', 'error');
                 return;
             }
 
@@ -1644,18 +1979,19 @@
                     method: 'POST',
                     body: JSON.stringify({
                         target_user_id: parseInt(targetUserId),
-                        message_purpose: messagePurpose,
-                        conversation_topic: `MJ Talk: ${messagePurpose}`
+                        message_purpose: objective,
+                        conversation_topic: `Auto-Chat: ${objective}`,
                     })
                 });
 
-                showAlert('MJ conversation initiated successfully!', 'success');
+                showAlert('Auto-chat objective sent for approval!', 'success');
                 closeMJTalkModal();
                 loadConversations();
+                loadActiveSessions();
                 loadDashboardData();
             } catch (error) {
                 console.error('Failed to initiate MJ talk:', error);
-                showAlert('Failed to start MJ conversation: ' + error.message, 'error');
+                showAlert('Failed to create auto-chat session: ' + error.message, 'error');
             }
         }
 
@@ -1671,7 +2007,7 @@
                 }
                 
                 const randomFriend = friends.friends[Math.floor(Math.random() * friends.friends.length)];
-                const randomTopics = [
+                const randomObjectives = [
                     "Check how they're doing",
                     "Share something interesting", 
                     "Ask about their day",
@@ -1679,24 +2015,26 @@
                     "Catch up on life"
                 ];
                 
-                const randomTopic = randomTopics[Math.floor(Math.random() * randomTopics.length)];
+                const randomObjective = randomObjectives[Math.floor(Math.random() * randomObjectives.length)];
                 
                 const result = await apiRequest('/api/v1/mj-network/mj-talk', {
                     method: 'POST',
                     body: JSON.stringify({
                         target_user_id: randomFriend.friend_user_id,
-                        message_purpose: randomTopic,
-                        conversation_topic: `Random MJ Talk: ${randomTopic}`
+                        message_purpose: randomObjective,
+                        conversation_topic: `Random Auto-Chat: ${randomObjective}`,
+                        max_turns: 6
                     })
                 });
                 
-                showAlert(`Random MJ Talk started with ${randomFriend.friend_username} about: ${randomTopic}`, 'success');
+                showAlert(`Random auto-chat objective sent to ${randomFriend.friend_username}: ${randomObjective}`, 'success');
                 loadConversations();
+                loadActiveSessions();
                 loadDashboardData();
                 
             } catch (error) {
                 console.error('Random MJ Talk failed:', error);
-                showAlert('Failed to start random MJ Talk: ' + error.message, 'error');
+                showAlert('Failed to start random auto-chat: ' + error.message, 'error');
             }
         }
 
@@ -1831,16 +2169,14 @@
         }
 
         function startMessagePolling() {
-            // Temporarily disable polling to stop the 500 errors
-            console.log('Message polling disabled temporarily due to server issues');
-            return;
-            
             checkForMJMessages();
             setInterval(() => {
                 if (document.visibilityState === 'visible') {
                     checkForMJMessages();
+                    loadPendingApprovalsCount();
+                    loadActiveSessionsCount();
                 }
-            }, 30000); // Check every 30 seconds
+            }, 5000); // Check every 30 seconds
         }
 
         // Utility functions
@@ -1872,13 +2208,19 @@
         }
 
         function viewConversation(conversationId) {
+            currentConversationId = conversationId;
+            isMessageDisplayOpen = true;
+            
             // Create modal to view conversation messages
             const modalHTML = `
                 <div id="conversation-modal" class="modal active">
                     <div class="modal-content" style="max-width: 700px; max-height: 80vh;">
                         <div class="modal-header">
-                            <h3>MJ Conversation Messages</h3>
-                            <button class="modal-close" onclick="closeConversationModal()">&times;</button>
+                            <h3>Auto-Chat Session Messages</h3>
+                            <div style="display: flex; gap: 10px; align-items: center;">
+                                <span id="auto-refresh-status" style="font-size: 12px; color: #00ff88;">● Live</span>
+                                <button class="modal-close" onclick="closeConversationModal()">&times;</button>
+                            </div>
                         </div>
                         <div class="chat-container" style="height: 400px;">
                             <div class="chat-messages" id="conversation-messages">
@@ -1890,6 +2232,7 @@
                         </div>
                         <div style="display: flex; gap: 15px; justify-content: center; margin-top: 15px;">
                             <button class="btn btn-secondary" onclick="closeConversationModal()">Close</button>
+                            <button class="btn btn-secondary btn-small" onclick="refreshMessages()">Refresh</button>
                         </div>
                     </div>
                 </div>
@@ -1904,110 +2247,98 @@
             
             // Load conversation messages
             loadConversationMessages(conversationId);
+            messageRefreshInterval = setInterval(() => {
+                if (isMessageDisplayOpen && currentConversationId) {
+                    loadConversationMessages(currentConversationId, true); // true = silent refresh
+                }
+            }, 5000);
         }
+        
 
-        async function loadConversationMessages(conversationId) {
+        async function loadConversationMessages(conversationId, silent = false) {
             const messagesContainer = document.getElementById('conversation-messages');
+            
+            if (!silent) {
+                messagesContainer.innerHTML = `
+                    <div class="loading">
+                        <div class="spinner"></div>
+                        Loading messages...
+                    </div>
+                `;
+            }
             
             try {
                 const response = await apiRequest(`/api/v1/mj-network/conversations/${conversationId}/messages`);
                 
                 if (response.messages && response.messages.length > 0) {
-                    messagesContainer.innerHTML = response.messages.map(msg => `
+                    const messagesHTML = response.messages.map(msg => `
                         <div class="message ${msg.from_user_id === currentUser.id ? 'sent' : 'received'}">
-                            <strong>${msg.from_username}:</strong> ${msg.message_content}
+                            <strong>${msg.from_username} MJ:</strong> ${msg.message_content}
                             <div style="font-size: 11px; opacity: 0.7; margin-top: 5px;">
                                 ${new Date(msg.created_at).toLocaleString()}
                             </div>
                         </div>
                     `).join('');
+                    
+                    // Only update if content changed (prevents scroll jumping)
+                    if (messagesContainer.innerHTML !== messagesHTML) {
+                        const wasAtBottom = messagesContainer.scrollTop + messagesContainer.clientHeight >= messagesContainer.scrollHeight - 5;
+                        messagesContainer.innerHTML = messagesHTML;
+                        
+                        // Auto-scroll only if user was at bottom
+                        if (wasAtBottom) {
+                            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+                        }
+                    }
                 } else {
                     messagesContainer.innerHTML = `
                         <div class="empty-state">
                             <h3>No messages yet</h3>
-                            <p>This conversation hasn't started yet</p>
+                            <p>This auto-chat session hasn't started yet</p>
                         </div>
                     `;
                 }
+                
+                // Update status indicator
+                const statusElement = document.getElementById('auto-refresh-status');
+                if (statusElement) {
+                    statusElement.textContent = '● Live';
+                    statusElement.style.color = '#00ff88';
+                }
+                
             } catch (error) {
                 console.error('Failed to load conversation messages:', error);
-                messagesContainer.innerHTML = '<div class="alert alert-error">Failed to load messages</div>';
+                if (!silent) {
+                    messagesContainer.innerHTML = '<div class="alert alert-error">Failed to load messages</div>';
+                }
+                
+                // Update status indicator
+                const statusElement = document.getElementById('auto-refresh-status');
+                if (statusElement) {
+                    statusElement.textContent = '● Error';
+                    statusElement.style.color = '#ff4444';
+                }
             }
         }
 
         function closeConversationModal() {
+            isMessageDisplayOpen = false;
+            currentConversationId = null;
+            
+            if (messageRefreshInterval) {
+                clearInterval(messageRefreshInterval);
+                messageRefreshInterval = null;
+            }
+            
             const modal = document.getElementById('conversation-modal');
             if (modal) modal.remove();
         }
-
-        // Auto-refresh data periodically
-        setInterval(() => {
-            if (document.visibilityState === 'visible' && currentUser) {
-                loadDashboardData();
-            }
-        }, 300000); // Refresh every 5 minutes
-
-
-        // Draft Management Functions
-        let currentDraftMessage = null;
-
-        // Load pending responses
-        async function loadPendingResponses() {
-            const responsesList = document.getElementById('pending-responses-list');
-            const responseCount = document.getElementById('pending-responses-count');
-            
-            try {
-                const pendingData = await apiRequest('/api/v1/mj-network/drafts/pending');
-                
-                responseCount.textContent = pendingData.count || 0;
-                
-                // Update dashboard stat
-                const dashboardStat = document.getElementById('stat-pending-responses');
-                if (dashboardStat) {
-                    dashboardStat.textContent = pendingData.count || 0;
-                }
-                
-                if (pendingData.pending_responses && pendingData.pending_responses.length > 0) {
-                    responsesList.innerHTML = pendingData.pending_responses.map(response => `
-                        <div class="list-item" style="border-left: 4px solid #00ff88;">
-                            <div class="user-avatar">🤖</div>
-                            <div class="user-details">
-                                <div class="username">
-                                    Response to: ${esc(response.original_request)}
-                                </div>
-                                <div class="user-status">
-                                    Preview: ${esc(response.draft_content.substring(0, 80))}${response.draft_content.length > 80 ? '...' : ''}
-                                </div>
-                                <div class="user-status">
-                                    Created: ${new Date(response.created_at).toLocaleDateString()} • 
-                                    Tokens: ${response.tokens_used} • 
-                                    Memories: ${response.memories_used ? response.memories_used.length : 0}
-                                </div>
-                            </div>
-                            <div style="display: flex; gap: 10px;">
-                                <button class="btn btn-primary btn-small" onclick="reviewDraft(${response.draft_message_id})">
-                                    Review & Approve
-                                </button>
-                                <button class="btn btn-danger btn-small" onclick="quickDeleteDraft(${response.draft_message_id})">
-                                    Delete
-                                </button>
-                            </div>
-                        </div>
-                    `).join('');
-                } else {
-                    responsesList.innerHTML = `
-                        <div class="empty-state">
-                            <h3>No pending responses</h3>
-                            <p>Your MJ hasn't generated any draft responses that need approval.</p>
-                            <p>When friends' MJs send messages, your MJ will create draft responses for you to review.</p>
-                        </div>
-                    `;
-                }
-            } catch (error) {
-                console.error('Failed to load pending responses:', error);
-                responsesList.innerHTML = '<div class="alert alert-error">Failed to load pending responses</div>';
+        function refreshMessages() {
+            if (currentConversationId) {
+                loadConversationMessages(currentConversationId);
             }
         }
+
         function esc(str) {
             if (!str) return '';
             return String(str)
@@ -2017,201 +2348,22 @@
                 .replace(/"/g, '&quot;')
                 .replace(/'/g, '&#39;');
         }
-                // Review individual draft
-        async function reviewDraft(messageId) {
-            try {
-                const pendingData = await apiRequest('/api/v1/mj-network/drafts/pending');
-                const draftResponse = pendingData.pending_responses.find(r => r.draft_message_id === messageId);
-                
-                if (!draftResponse) {
-                    showAlert('Draft response not found', 'error');
-                    return;
-                }
-                
-                currentDraftMessage = draftResponse;
-                
-                document.getElementById('original-request-text').textContent = draftResponse.original_request || 'No request content';
-                document.getElementById('draft-content').value = draftResponse.draft_content;
-                
-                const metadata = [];
-                if (draftResponse.memories_used && draftResponse.memories_used.length > 0) {
-                    metadata.push(`${draftResponse.memories_used.length} memories used`);
-                }
-                if (draftResponse.tokens_used) {
-                    metadata.push(`${draftResponse.tokens_used} tokens`);
-                }
-                metadata.push(`Created ${new Date(draftResponse.created_at).toLocaleString()}`);
-                
-                document.getElementById('draft-metadata').textContent = metadata.join(' • ');
-                document.getElementById('draft-response-modal').classList.add('active');
-                document.getElementById('draft-content').focus();
-                
-            } catch (error) {
-                console.error('Failed to load draft details:', error);
-                showAlert('Failed to load draft details: ' + error.message, 'error');
-            }
-        }
 
-        function closeDraftModal() {
-            document.getElementById('draft-response-modal').classList.remove('active');
-            currentDraftMessage = null;
-        }
-
-        async function approveDraft() {
-            if (!currentDraftMessage) {
-                showAlert('No draft selected', 'error');
-                return;
-            }
-            
-            const approveBtn = document.getElementById('approve-draft-btn');
-            const originalText = approveBtn.textContent;
-            
-            try {
-                approveBtn.disabled = true;
-                approveBtn.textContent = 'Sending...';
-                
-                const draftContent = document.getElementById('draft-content').value.trim();
-                
-                if (!draftContent) {
-                    showAlert('Response content cannot be empty', 'error');
-                    return;
-                }
-                
-                const wasEdited = draftContent !== currentDraftMessage.draft_content;
-                
-                if (wasEdited) {
-                    await apiRequest('/api/v1/mj-network/drafts/edit-approve', {
-                        method: 'PUT',
-                        body: JSON.stringify({
-                            message_id: currentDraftMessage.draft_message_id,
-                            new_content: draftContent
-                        })
-                    });
-                    showAlert('Draft edited and sent successfully!', 'success');
-                } else {
-                    await apiRequest('/api/v1/mj-network/drafts/approve', {
-                        method: 'POST',
-                        body: JSON.stringify({
-                            message_id: currentDraftMessage.draft_message_id
-                        })
-                    });
-                    showAlert('Draft approved and sent successfully!', 'success');
-                }
-                
-                closeDraftModal();
-                loadPendingResponses();
-                loadDashboardData();
-                loadConversations();
-                
-            } catch (error) {
-                console.error('Failed to approve draft:', error);
-                showAlert('Failed to send response: ' + error.message, 'error');
-            } finally {
-                approveBtn.disabled = false;
-                approveBtn.textContent = originalText;
-            }
-        }
-
-        async function deleteDraft() {
-            if (!currentDraftMessage) {
-                showAlert('No draft selected', 'error');
-                return;
-            }
-            
-            if (!confirm('Are you sure you want to delete this draft response? This cannot be undone.')) {
-                return;
-            }
-            
-            const deleteBtn = document.getElementById('delete-draft-btn');
-            const originalText = deleteBtn.textContent;
-            
-            try {
-                deleteBtn.disabled = true;
-                deleteBtn.textContent = 'Deleting...';
-                
-                await apiRequest(`/api/v1/mj-network/drafts/${currentDraftMessage.draft_message_id}`, {
-                    method: 'DELETE'
-                });
-                
-                showAlert('Draft deleted successfully', 'info');
-                closeDraftModal();
-                loadPendingResponses();
+        // Auto-refresh data periodically
+        setInterval(() => {
+            if (document.visibilityState === 'visible' && currentUser) {
                 loadDashboardData();
                 
-            } catch (error) {
-                console.error('Failed to delete draft:', error);
-                showAlert('Failed to delete draft: ' + error.message, 'error');
-            } finally {
-                deleteBtn.disabled = false;
-                deleteBtn.textContent = originalText;
-            }
-        }
-
-        async function quickDeleteDraft(messageId) {
-            if (!confirm('Delete this draft response without reviewing it?')) {
-                return;
-            }
-            
-            try {
-                await apiRequest(`/api/v1/mj-network/drafts/${messageId}`, {
-                    method: 'DELETE'
-                });
-                
-                showAlert('Draft deleted', 'info');
-                loadPendingResponses();
-                loadDashboardData();
-                
-            } catch (error) {
-                console.error('Failed to delete draft:', error);
-                showAlert('Failed to delete draft: ' + error.message, 'error');
-            }
-        }
-
-        // Update existing functions
-        const originalShowSection = showSection;
-        showSection = function(sectionId) {
-            originalShowSection(sectionId);
-            if (sectionId === 'pending-responses') {
-                loadPendingResponses();
-            }
-        };
-
-        const originalLoadDashboardData = loadDashboardData;
-        loadDashboardData = async function() {
-            try {
-                await originalLoadDashboardData();
-                
-                // Load pending responses count for dashboard
-                try {
-                    const pendingData = await apiRequest('/api/v1/mj-network/drafts/pending');
-                    const dashboardStat = document.getElementById('stat-pending-responses');
-                    if (dashboardStat) {
-                        dashboardStat.textContent = pendingData.count || 0;
-                    }
-                } catch (error) {
-                    console.error('Failed to load pending responses count:', error);
+                // Refresh active sections
+                if (document.getElementById('pending-approvals').classList.contains('active')) {
+                    loadPendingApprovals();
                 }
-            } catch (error) {
-                console.error('Dashboard loading failed:', error);
-            }
-        };
-
-        // Auto-refresh pending responses
-        setInterval(async () => {
-            if (document.getElementById('pending-responses').classList.contains('active')) {
-                loadPendingResponses();
-            }
-            
-            try {
-                const pendingData = await apiRequest('/api/v1/mj-network/drafts/pending');
-                const dashboardStat = document.getElementById('stat-pending-responses');
-                if (dashboardStat) {
-                    dashboardStat.textContent = pendingData.count || 0;
+                
+                if (document.getElementById('active-sessions').classList.contains('active')) {
+                    loadActiveSessions();
                 }
-            } catch (error) {
-                // Silently fail for background updates
             }
-        }, 120000);
+        }, 5000); // Refresh every minute
     </script>
 </body>
 </html>

@@ -764,6 +764,148 @@ class MJConversationRepository(BaseRepository[MJConversation]):
             "average_messages_per_conversation": float(avg_messages) if avg_messages else 0,
             "privacy_level_distribution": privacy_levels
         }
+        # =====================================================
+    # SESSION MANAGEMENT METHODS - New for auto-chat
+    # =====================================================
+
+    async def start_auto_session(
+        self, 
+        conversation_id: int, 
+        approved_by_user_id: int,
+        objective: str,
+        max_turns: int = 6
+    ) -> bool:
+        """Start an auto-chat session after objective approval"""
+        session_expires_at = datetime.utcnow() + timedelta(hours=24)
+        
+        result = await self.db.execute(
+            update(MJConversation)
+            .where(MJConversation.id == conversation_id)
+            .values(
+                session_status="in_progress",
+                objective=objective,
+                turn_count=0,
+                max_turns=max_turns,
+                session_expires_at=session_expires_at,
+                auto_approved_by=approved_by_user_id,
+                next_speaker_id=None  # Will be set after first message
+            )
+        )
+        await self.db.commit()
+        return result.rowcount > 0
+
+    async def get_active_sessions(self) -> List[MJConversation]:
+        """Get all active auto-chat sessions"""
+        result = await self.db.execute(
+            select(MJConversation)
+            .where(
+                and_(
+                    MJConversation.session_status == "in_progress",
+                    MJConversation.session_expires_at > func.now()
+                )
+            )
+            .options(
+                selectinload(MJConversation.user_a),
+                selectinload(MJConversation.user_b)
+            )
+            .order_by(asc(MJConversation.session_expires_at))
+        )
+        return result.scalars().all()
+
+    async def advance_turn(self, conversation_id: int, next_speaker_id: int) -> bool:
+        """Advance the turn counter and set next speaker"""
+        result = await self.db.execute(
+            update(MJConversation)
+            .where(MJConversation.id == conversation_id)
+            .values(
+                turn_count=MJConversation.turn_count + 1,
+                next_speaker_id=next_speaker_id,
+                last_message_at=func.now()
+            )
+        )
+        await self.db.commit()
+        return result.rowcount > 0
+
+    async def end_session(self, conversation_id: int, reason: str = "completed") -> bool:
+        """End an auto-chat session"""
+        session_status = "completed" if reason == "completed" else "expired"
+        
+        result = await self.db.execute(
+            update(MJConversation)
+            .where(MJConversation.id == conversation_id)
+            .values(
+                session_status=session_status,
+                next_speaker_id=None
+            )
+        )
+        await self.db.commit()
+        return result.rowcount > 0
+
+    async def get_sessions_ready_for_turn(self) -> List[MJConversation]:
+        """Get sessions where it's someone's turn to respond"""
+        result = await self.db.execute(
+            select(MJConversation)
+            .where(
+                and_(
+                    MJConversation.session_status == "in_progress",
+                    MJConversation.next_speaker_id.is_not(None),
+                    MJConversation.turn_count < MJConversation.max_turns,
+                    MJConversation.session_expires_at > func.now()
+                )
+            )
+            .options(
+                selectinload(MJConversation.user_a),
+                selectinload(MJConversation.user_b)
+            )
+        )
+        return result.scalars().all()
+
+    async def create_pending_session(
+        self,
+        user_a_id: int,
+        user_b_id: int,
+        initiated_by_user_id: int,
+        objective: str,
+        conversation_topic: Optional[str] = None,
+        relationship_id: Optional[int] = None
+    ) -> MJConversation:
+        """Create new conversation in pending approval state"""
+        conversation = MJConversation(
+            user_a_id=user_a_id,
+            user_b_id=user_b_id,
+            initiated_by_user_id=initiated_by_user_id,
+            conversation_topic=conversation_topic,
+            relationship_id=relationship_id,
+            session_status="pending_approval",
+            objective=objective,
+            turn_count=0,
+            max_turns=6
+        )
+        
+        self.db.add(conversation)
+        await self.db.commit()
+        await self.db.refresh(conversation)
+        return conversation
+
+    async def get_pending_approvals_for_user(self, user_id: int) -> List[MJConversation]:
+        """Get conversations pending approval for a user"""
+        result = await self.db.execute(
+            select(MJConversation)
+            .where(
+                and_(
+                    or_(MJConversation.user_a_id == user_id, MJConversation.user_b_id == user_id),
+                    MJConversation.session_status == "pending_approval",
+                    MJConversation.initiated_by_user_id != user_id  # Don't show own requests
+                )
+            )
+            .options(
+                selectinload(MJConversation.user_a),
+                selectinload(MJConversation.user_b),
+                selectinload(MJConversation.initiator)
+            )
+            .order_by(desc(MJConversation.created_at))
+        )
+        return result.scalars().all()
 
 # =====================================================
 # 5. MJ MESSAGES REPOSITORY - Complete message system

@@ -35,12 +35,15 @@ class LocationUpdate(BaseModel):
     accuracy_meters: Optional[int] = None
     is_visible_on_map: bool = True
 
-class DraftApprovalRequest(BaseModel):
-    message_id: int
+class ObjectiveApprovalRequest(BaseModel):
+    conversation_id: int
+    approved: bool = True
 
-class DraftEditRequest(BaseModel):
-    message_id: int
-    new_content: str
+class MJTalkRequest(BaseModel):
+    target_user_id: int
+    message_purpose: str  # "Ask how they're doing", "Check on their health", etc.
+    conversation_topic: Optional[str] = None
+    max_turns: int = 6
 
 class FriendRequestCreate(BaseModel):
     to_user_id: int
@@ -54,10 +57,7 @@ class FriendRequestResponse(BaseModel):
     response_message: Optional[str] = None
     relationship_type: Optional[str] = "friend"
 
-class MJTalkRequest(BaseModel):
-    target_user_id: int
-    message_purpose: str  # "Ask how they're doing", "Check on their health", etc.
-    conversation_topic: Optional[str] = None
+
 
 class ScheduledCheckinCreate(BaseModel):
     target_user_id: int
@@ -437,115 +437,60 @@ async def respond_to_friend_request(
             detail=str(e)
         )
 
-@router.get("/drafts/pending")
-async def get_pending_draft_responses(
+@router.get("/objectives/pending")
+async def get_pending_objectives(
     current_user: User = Depends(get_authenticated_user),
     db: AsyncSession = Depends(get_db_session)
 ):
-    """📝 Get all draft responses awaiting user approval"""
+    """Get objectives pending approval for this user"""
     
     communication_service = MJCommunicationService(db)
     
     try:
-        pending_responses = await communication_service.get_pending_responses(current_user.id)
+        pending_approvals = await communication_service.get_pending_approvals(current_user.id)
         
         return {
-            "pending_responses": pending_responses,
-            "count": len(pending_responses),
-            "message": f"Found {len(pending_responses)} pending draft responses"
+            "pending_approvals": pending_approvals,
+            "count": len(pending_approvals),
+            "message": f"Found {len(pending_approvals)} objectives pending approval"
         }
         
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to retrieve pending responses: {str(e)}"
+            detail=f"Failed to retrieve pending objectives: {str(e)}"
         )
 
-@router.post("/drafts/approve")
-async def approve_draft_response(
-    approval_request: DraftApprovalRequest,
-    background_tasks: BackgroundTasks,
+@router.post("/objectives/approve")
+async def approve_objective(
+    approval_request: ObjectiveApprovalRequest,
     current_user: User = Depends(get_authenticated_user),
     db: AsyncSession = Depends(get_db_session)
 ):
-    """✅ Approve and send a draft response"""
+    """Approve or reject a conversation objective"""
     
     communication_service = MJCommunicationService(db)
     
     try:
-        result = await communication_service.approve_mj_response(
-            message_id=approval_request.message_id,
-            user_id=current_user.id
-        )
-        
-        # Add background task for offline message delivery if needed
-        # Add background task for offline message delivery if needed
-        if not result["delivered"]:
-            network_repo = MJNetworkRepository(db)
-            message = await network_repo.messages.get_by_id(approval_request.message_id)
-            if message:
-                background_tasks.add_task(
-                    _queue_offline_message_safe,
-                    approval_request.message_id,
-                    message.to_user_id
-                )
-        
-        return {
-            "message": "Draft response approved and sent successfully",
-            "message_id": approval_request.message_id,
-            "sent": result["sent"],
-            "delivered": result["delivered"],
-            "conversation_id": result["message"].conversation_id
-        }
-        
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e)
-        )
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to approve draft: {str(e)}"
-        )
-
-@router.put("/drafts/edit-approve")
-async def edit_and_approve_draft(
-    edit_request: DraftEditRequest,
-    background_tasks: BackgroundTasks,
-    current_user: User = Depends(get_authenticated_user),
-    db: AsyncSession = Depends(get_db_session)
-):
-    """✏️ Edit draft content and then approve/send it"""
-    
-    communication_service = MJCommunicationService(db)
-    
-    try:
-        result = await communication_service.edit_and_approve_response(
-            message_id=edit_request.message_id,
+        result = await communication_service.approve_objective(
+            conversation_id=approval_request.conversation_id,
             user_id=current_user.id,
-            new_content=edit_request.new_content
+            approved=approval_request.approved
         )
         
-        # Add background task for offline message delivery if needed
-        # Add background task for offline message delivery if needed
-        if not result["delivered"]:
-            network_repo = MJNetworkRepository(db)
-            message = await network_repo.messages.get_by_id(edit_request.message_id)
-            if message:
-                background_tasks.add_task(
-                    _queue_offline_message_safe,
-                    edit_request.message_id,
-                    message.to_user_id
-                )
-        
-        return {
-            "message": "Draft response edited and sent successfully",
-            "message_id": edit_request.message_id,
-            "new_content": edit_request.new_content,
-            "sent": result["sent"],
-            "delivered": result["delivered"]
-        }
+        if result["approved"]:
+            return {
+                "message": "Objective approved and auto-chat session started",
+                "conversation_id": result["conversation_id"],
+                "status": result["status"],
+                "first_response": result["first_response"]
+            }
+        else:
+            return {
+                "message": "Objective rejected",
+                "conversation_id": result["conversation_id"],
+                "status": result["status"]
+            }
         
     except ValueError as e:
         raise HTTPException(
@@ -555,56 +500,40 @@ async def edit_and_approve_draft(
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to edit and approve draft: {str(e)}"
+            detail=f"Failed to process objective approval: {str(e)}"
         )
 
-@router.delete("/drafts/{message_id}")
-async def delete_draft_response(
-    message_id: int,
+@router.get("/sessions/active")
+async def get_active_sessions(
     current_user: User = Depends(get_authenticated_user),
     db: AsyncSession = Depends(get_db_session)
 ):
-    """🗑️ Delete a draft response without sending"""
+    """Get active auto-chat sessions for this user"""
     
     network_repo = MJNetworkRepository(db)
+    active_sessions = await network_repo.conversations.get_active_sessions()
     
-    try:
-        # Get the draft message
-        message = await network_repo.messages.get_by_id(message_id)
-        if not message:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Message not found"
-            )
-        
-        if message.from_user_id != current_user.id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="You can only delete your own draft responses"
-            )
-        
-        if message.approval_status != "draft":
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Can only delete draft messages"
-            )
-        
-        # Delete the draft message
-        await network_repo.messages.delete(message_id)
-        
-        return {
-            "message": "Draft response deleted successfully",
-            "deleted_message_id": message_id
-        }
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to delete draft: {str(e)}"
-        )
+    # Filter sessions where current user is involved
+    user_sessions = []
+    for session in active_sessions:
+        if session.user_a_id == current_user.id or session.user_b_id == current_user.id:
+            other_user = session.user_b if session.user_a_id == current_user.id else session.user_a
+            
+            user_sessions.append({
+                "conversation_id": session.id,
+                "objective": session.objective,
+                "turn_count": session.turn_count,
+                "max_turns": session.max_turns,
+                "session_expires_at": session.session_expires_at,
+                "other_user_id": other_user.id,
+                "other_username": other_user.username,
+                "next_speaker_id": session.next_speaker_id
+            })
     
+    return {
+        "active_sessions": user_sessions,
+        "count": len(user_sessions)
+    }
 
 @router.get("/friends")
 async def get_friends(
@@ -642,11 +571,10 @@ async def get_friends(
 @router.post("/mj-talk")
 async def initiate_mj_conversation(
     talk_request: MJTalkRequest,
-    background_tasks: BackgroundTasks,
     current_user: User = Depends(get_authenticated_user),
     db: AsyncSession = Depends(get_db_session)
 ):
-    """🤖 THE MAIN EVENT: Initiate MJ-to-MJ conversation!"""
+    """Create pending auto-chat session with objective"""
     
     if talk_request.target_user_id == current_user.id:
         raise HTTPException(
@@ -660,29 +588,17 @@ async def initiate_mj_conversation(
         result = await communication_service.initiate_mj_conversation(
             from_user_id=current_user.id,
             to_user_id=talk_request.target_user_id,
-            message_purpose=talk_request.message_purpose,
-            conversation_topic=talk_request.conversation_topic
+            objective=talk_request.message_purpose,
+            conversation_topic=talk_request.conversation_topic,
+            max_turns=talk_request.max_turns
         )
         
-        # Queue background task for offline message delivery if needed
-        if not result["target_user_online"]:
-            background_tasks.add_task(
-                _queue_offline_message_safe,
-                result["request_message"].id,  # Fixed key
-                talk_request.target_user_id
-            )
-        
         return {
-            "message": "MJ conversation initiated successfully!",
+            "message": "Auto-chat objective sent for approval",
             "conversation_id": result["conversation"].id,
-            "request_message_id": result["request_message"].id,
-            "target_user_online": result["target_user_online"],
-            "request_sent": result["request_sent"],
-            "draft_generated": result["draft_generated"],
-            "draft_message_id": (
-                result["draft_response"]["draft_message"].id 
-                if result["draft_response"] else None
-            )
+            "objective": result["objective"],
+            "status": result["status"],
+            "requires_approval_from": result["requires_approval_from"]
         }
         
     except ValueError as e:
@@ -1006,6 +922,116 @@ async def get_comprehensive_network_stats(
             "last_location_update": network_data["location"].created_at if network_data["location"] else None
         }
         
+    }
+
+# =====================================================
+# PRIVACY SETTINGS MANAGEMENT ENDPOINTS
+# =====================================================
+
+class PrivacySettingsUpdate(BaseModel):
+    share_mood: bool = True
+    share_activity: bool = True
+    share_health: bool = False
+    share_life_events: bool = True
+    share_work: bool = True
+    share_location: bool = False
+    custom_privacy_text: Optional[str] = None
+
+@router.get("/privacy/settings/{friend_user_id}")
+async def get_privacy_settings(
+    friend_user_id: int,
+    current_user: User = Depends(get_authenticated_user),
+    db: AsyncSession = Depends(get_db_session)
+):
+    """Get current privacy settings for a specific friend"""
+    
+    network_repo = MJNetworkRepository(db)
+    
+    # Get the relationship
+    relationship = await network_repo.relationships.get_relationship(
+        user_id=current_user.id,
+        friend_user_id=friend_user_id
+    )
+    
+    if not relationship:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Friendship not found"
+        )
+    
+    privacy_settings = relationship.privacy_settings or {}
+    
+    return {
+        "friend_user_id": friend_user_id,
+        "relationship_type": relationship.relationship_type,
+        "privacy_settings": privacy_settings
+    }
+
+@router.put("/privacy/settings/{friend_user_id}")
+async def update_privacy_settings(
+    friend_user_id: int,
+    privacy_update: PrivacySettingsUpdate,
+    current_user: User = Depends(get_authenticated_user),
+    db: AsyncSession = Depends(get_db_session)
+):
+    """Update privacy settings for a specific friend"""
+    
+    # Build privacy settings dict
+    privacy_settings = {
+        "share_mood": privacy_update.share_mood,
+        "share_activity": privacy_update.share_activity,
+        "share_health": privacy_update.share_health,
+        "share_life_events": privacy_update.share_life_events,
+        "share_work": privacy_update.share_work,
+        "share_location": privacy_update.share_location,
+        "custom_categories": {}
+    }
+    
+    # Add custom privacy text processing if provided
+    if privacy_update.custom_privacy_text:
+        privacy_settings["custom_privacy_text"] = privacy_update.custom_privacy_text
+    
+    friend_service = FriendManagementService(db)
+    
+    try:
+        success = await friend_service.update_relationship_privacy_settings(
+            user_id=current_user.id,
+            friend_user_id=friend_user_id,
+            privacy_settings=privacy_settings
+        )
+        
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Friendship not found"
+            )
+        
+        return {
+            "message": "Privacy settings updated successfully",
+            "friend_user_id": friend_user_id,
+            "updated_settings": privacy_settings
+        }
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update privacy settings: {str(e)}"
+        )
+
+@router.get("/privacy/defaults/{relationship_type}")
+async def get_default_privacy_settings(
+    relationship_type: str,
+    current_user: User = Depends(get_authenticated_user),
+    db: AsyncSession = Depends(get_db_session)
+):
+    """Get default privacy settings for a relationship type"""
+    
+    friend_service = FriendManagementService(db)
+    default_settings = friend_service._get_default_privacy_settings(relationship_type)
+    
+    return {
+        "relationship_type": relationship_type,
+        "default_privacy_settings": default_settings
     }
 # =====================================================
 # DEBUG ENDPOINTS - Add to your existing router

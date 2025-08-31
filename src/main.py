@@ -12,6 +12,7 @@ import bcrypt
 import jwt
 from datetime import datetime
 import json
+from src.services.background.session_processor import session_processor
 # Add this import at the top with other imports
 from dotenv import load_dotenv
 
@@ -137,12 +138,22 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"❌ MJ Network services failed: {e}")
     
+    # Start background session processor
+    try:
+        asyncio.create_task(session_processor.start())
+        print("✅ Background session processor started")
+    except Exception as e:
+        print(f"❌ Background session processor failed: {e}")
+    
     print("✅ MJ Network ready with COMPLETE networking capabilities")
     await verify_mj_network_on_startup()
 
     yield
     
     # Shutdown
+    await session_processor.stop()
+    print("✅ Background session processor stopped")
+    
     if db_pool:
         await db_pool.close()
 
@@ -294,13 +305,13 @@ async def get_pending_messages(current_user: int = Depends(get_current_user)):
             # Get all pending messages for this user from pending_messages table
             pending_messages = await conn.fetch(
                 """SELECT pm.id as pending_id, pm.message_id, pm.queued_at,
-                          mj.message_content, mj.from_user_id, mj.message_purpose,
-                          mj.created_at, u.username as from_username
-                   FROM pending_messages pm
-                   JOIN mj_messages mj ON pm.message_id = mj.id  
-                   JOIN users u ON mj.from_user_id = u.id
-                   WHERE pm.recipient_user_id = $1 AND pm.status = 'queued'
-                   ORDER BY pm.queued_at ASC""",
+                        mj.message_content, mj.from_user_id,
+                        mj.created_at, u.username as from_username
+                FROM pending_messages pm
+                JOIN mj_messages mj ON pm.message_id = mj.id  
+                JOIN users u ON mj.from_user_id = u.id
+                WHERE pm.recipient_user_id = $1 AND pm.status = 'queued'
+                ORDER BY pm.queued_at ASC""",
                 current_user
             )
             
@@ -317,7 +328,6 @@ async def get_pending_messages(current_user: int = Depends(get_current_user)):
                     "from_user_id": msg['from_user_id'],
                     "from_username": msg['from_username'], 
                     "content": msg['message_content'],
-                    "purpose": msg['message_purpose'],
                     "received_at": msg['queued_at'].isoformat(),
                     "created_at": msg['created_at'].isoformat()
                 })

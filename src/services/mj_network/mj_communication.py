@@ -3,7 +3,8 @@ import json
 from typing import Dict, Any, List, Optional, Tuple
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime
-
+from ...models.database.user import User
+from sqlalchemy import select
 from ...database.repositories.mj_network import MJNetworkRepository
 from ...database.repositories.memory import MemoryRepository
 from ...services.ai.openai_client import OpenAIClient
@@ -40,118 +41,217 @@ class MJCommunicationService:
         self,
         from_user_id: int,
         to_user_id: int,
-        message_purpose: str,
-        conversation_topic: Optional[str] = None
+        objective: str,
+        conversation_topic: Optional[str] = None,
+        max_turns: int = 10  # ✅ Change from 6 to 10
     ) -> Dict[str, Any]:
         """
-        🌐 MODIFIED: Now only handles SENDING REQUESTS (User A to User B's MJ)
-        
-        This method now:
-        1. Sends the request from User A's MJ to User B's MJ
-        2. Triggers draft response generation for User B (but doesn't auto-send)
+        Create a pending auto-chat session that needs objective approval
         """
         
-        print(f"🤖 Initiating MJ conversation: User {from_user_id} -> User {to_user_id}")
-        print(f"💭 Purpose: {message_purpose}")
+        print(f"Creating pending auto-chat session: User {from_user_id} -> User {to_user_id}")
+        print(f"Objective: {objective}")
         
-        # Step 1: Validate relationship and get privacy settings
+        # Step 1: Validate relationship
         relationship = await self.network_repo.relationships.get_mutual_relationship(from_user_id, to_user_id)
         if not relationship:
             raise ValueError("Users are not friends. Send a friend request first.")
         
-        # Step 2: Check target user's MJ status
+        # Step 2: Check if target user is online (required for approval)
         target_mj_registry = await self.network_repo.mj_registry.get_by_user_id(to_user_id)
-        if not target_mj_registry:
-            raise ValueError("Target user's MJ is not registered in the network")
+        if not target_mj_registry or target_mj_registry.status != MJStatus.ONLINE.value:
+            raise ValueError("Target user must be online to approve auto-chat objectives")
         
-        target_user_online = target_mj_registry.status == MJStatus.ONLINE.value
-        can_respond_when_offline = await self.network_repo.relationships.can_mj_respond_when_offline(
-            to_user_id, from_user_id
+        # Step 3: Create pending session
+        conversation = await self.network_repo.conversations.create_pending_session(
+            user_a_id=from_user_id,
+            user_b_id=to_user_id,
+            initiated_by_user_id=from_user_id,
+            objective=objective,
+            conversation_topic=conversation_topic,
+            relationship_id=getattr(relationship, 'id', None)
         )
         
-        print(f"🔍 Target user status: {'online' if target_user_online else 'offline'}")
-        print(f"📱 Can respond when offline: {can_respond_when_offline}")
-        
-        # Step 3: Get or create conversation
-        conversation = await self.network_repo.conversations.get_conversation_between_users(from_user_id, to_user_id)
-        if not conversation:
-            conversation = await self.network_repo.conversations.create_conversation(
-                user_a_id=from_user_id,
-                user_b_id=to_user_id,
-                initiated_by_user_id=from_user_id,
-                conversation_topic=conversation_topic,
-                relationship_id=getattr(relationship, 'id', None)
-            )
-            print(f"💬 Created new conversation: {conversation.id}")
-        else:
-            print(f"💬 Using existing conversation: {conversation.id}")
-        
-        # Step 4: Create the REQUEST message (this gets sent immediately)
-        request_message = await self.network_repo.messages.create_mj_message(
-            conversation_id=conversation.id,
-            from_user_id=from_user_id,
-            to_user_id=to_user_id,
-            message_content=message_purpose,
-            message_type=MessageType.QUESTION.value,
-            openai_prompt_used=None,
-            openai_response_raw=None,
-            privacy_settings_applied={},
-            user_memories_used=[],  # <- This is fine as empty list
-            tokens_used=0,
-            approval_status="sent"
-        )
-        
-        print(f"💾 Saved request message: {request_message.id}")
-        
-        # Step 5: Handle delivery of the request
-        if target_user_online:
-            await self.network_repo.messages.mark_as_delivered(request_message.id)
-            await self.network_repo.mj_registry.increment_stats(
-                user_id=to_user_id,
-                messages_received=1
-            )
-            print(f"📨 Request delivered immediately (user online)")
-        else:
-            await self.queue_offline_message(request_message.id, to_user_id)
-            print(f"📬 Request queued for offline delivery")
-        
-        # Step 6: Generate draft response for the target user (User B)
-        # Step 6: Generate draft response for the target user (User B)
-        try:
-            draft_response = await self.generate_draft_response(
-                request_message_id=request_message.id,
-                responding_user_id=to_user_id,
-                requesting_user_id=from_user_id,
-                conversation_id=conversation.id,
-                message_purpose=message_purpose
-            )
-            print(f"📝 Generated draft response for user {to_user_id}")
-        except Exception as e:
-            print(f"⚠️ Failed to generate draft response: {e}")
-            draft_response = None
-        
-        # Step 7: Update sender statistics
-        await self.network_repo.mj_registry.increment_stats(
-            user_id=from_user_id,
-            messages_sent=1
-        )
-        
-        # Update conversation stats
-        # Only increment for the sent request message, not the draft
-        await self.network_repo.conversations.update_last_message(conversation.id, increment=True)
-        await self.network_repo.relationships.update_interaction(from_user_id, to_user_id)
-        
-        print(f"✅ MJ request sent successfully, draft response generated")
+        print(f"Created pending session: {conversation.id}")
         
         return {
             "conversation": conversation,
-            "request_message": request_message,
-            "draft_response": draft_response,
-            "target_user_online": target_user_online,
-            "request_sent": True,
-            "draft_generated": draft_response is not None
+            "objective": objective,
+            "status": "pending_approval",
+            "requires_approval_from": to_user_id
         }
+    async def approve_objective(self, conversation_id: int, user_id: int, approved: bool = True) -> Dict[str, Any]:
+
     
+        # Get the conversation
+        conversation = await self.network_repo.conversations.get_by_id(conversation_id)
+        if not conversation:
+            raise ValueError("Conversation not found")
+        
+        # Verify user can approve this objective
+        if conversation.user_a_id != user_id and conversation.user_b_id != user_id:
+            raise ValueError("You can only approve objectives for your own conversations")
+        
+        if conversation.initiated_by_user_id == user_id:
+            raise ValueError("You cannot approve your own conversation request")
+        
+        if conversation.session_status != "pending_approval":
+            raise ValueError("This conversation is not pending approval")
+        
+        if not approved:
+            # Reject the objective
+            await self.network_repo.conversations.end_session(conversation_id, "rejected")
+            return {
+                "conversation_id": conversation_id,
+                "approved": False,
+                "status": "rejected"
+            }
+        
+        # Approve and start session
+        success = await self.network_repo.conversations.start_auto_session(
+            conversation_id=conversation_id,
+            approved_by_user_id=user_id,
+            objective=conversation.objective,
+            max_turns=conversation.max_turns or 10  # ✅ Match the new default
+        )
+        
+        if not success:
+            raise ValueError("Failed to start auto-chat session")
+        
+        # Generate first response immediately
+        first_response = await self._generate_auto_response(conversation_id)
+        
+        print(f"Objective approved and session started: {conversation_id}")
+        
+        return {
+            "conversation_id": conversation_id,
+            "approved": True,
+            "status": "in_progress",
+            "first_response": first_response
+        }
+
+    async def _get_user_context(self, user_id: int) -> str:
+        """Get user context for prompt building"""
+        try:
+            # Get basic user info
+            from sqlalchemy import select
+            from ...models.database.user import User
+            
+            result = await self.db.execute(select(User).where(User.id == user_id))
+            user = result.scalar_one_or_none()
+            
+            if user:
+                return f"User: {user.username}, joined: {user.created_at.strftime('%Y-%m')}"
+            else:
+                return f"User ID: {user_id}"
+        except Exception as e:
+            print(f"Error getting user context: {e}")
+            return f"User ID: {user_id}"
+
+    async def _get_user_memories(self, user_id: int) -> List[Any]:
+        """Get user memories for prompt building"""
+        try:
+            memories = await self.memory_repo.get_recent_memories(
+                user_id=user_id,
+                limit=10,
+                days=30
+            )
+            return memories
+        except Exception as e:
+            print(f"Error getting user memories: {e}")
+            return []
+    async def _generate_auto_response(self, conversation_id: int) -> Dict[str, Any]:
+        """Generate automatic response for active session"""
+        
+        try:
+            # Get all database data FIRST, before any OpenAI calls
+            conversation = await self.network_repo.conversations.get_by_id(conversation_id)
+            if not conversation:
+                raise ValueError("Conversation not found")
+            
+            # Get conversation history
+            messages = await self.network_repo.messages.get_conversation_messages(
+                conversation_id=conversation_id,
+                limit=10
+            )
+            
+            # Determine speakers
+            if conversation.next_speaker_id:
+                from_user_id = conversation.next_speaker_id
+                to_user_id = conversation.user_b_id if from_user_id == conversation.user_a_id else conversation.user_a_id
+            else:
+                from_user_id = conversation.initiated_by_user_id
+                to_user_id = conversation.user_b_id if from_user_id == conversation.user_a_id else conversation.user_a_id
+            
+            # Get relationship and users info
+            relationship = await self.network_repo.relationships.get_mutual_relationship(from_user_id, to_user_id)
+            
+            # Get user context and memories BEFORE OpenAI call
+            user_context = await self._get_user_context(from_user_id)
+            user_memories = await self._get_user_memories(from_user_id)
+            
+            # Prepare all data for response generation
+            privacy_settings = getattr(relationship, 'privacy_settings', {}) or {}
+            relationship_type = getattr(relationship, 'relationship_type', 'friend')
+            
+            # Now generate response (this can fail without affecting database)
+            mj_response_data = await self._generate_mj_response(
+                from_user_id=from_user_id,
+                to_user_id=to_user_id,
+                message_purpose=conversation.objective,
+                privacy_settings=privacy_settings,
+                relationship_type=relationship_type,
+                conversation_id=conversation.id,
+                conversation_data={  # Add this new parameter
+                    "turn_count": conversation.turn_count or 1,
+                    "max_turns": conversation.max_turns or 6,
+                    "session_status": conversation.session_status
+                }
+            )
+            
+            # Only after successful generation, create the message
+            message = await self.network_repo.messages.create_mj_message(
+                conversation_id=conversation.id,
+                from_user_id=from_user_id,
+                to_user_id=to_user_id,
+                message_content=mj_response_data["response_content"],
+                message_type=MessageType.RESPONSE.value,
+                openai_prompt_used=mj_response_data["prompt_used"],
+                openai_response_raw=mj_response_data["raw_response"],
+                privacy_settings_applied=serialize_for_json(mj_response_data["privacy_settings_applied"]),
+                user_memories_used=serialize_for_json(mj_response_data["memories_used"]),
+                tokens_used=mj_response_data["tokens_used"],
+                approval_status="sent",
+                delivery_status=DeliveryStatus.DELIVERED.value
+            )
+            
+            # Update session state
+            next_speaker = to_user_id
+            await self.network_repo.conversations.advance_turn(conversation.id, next_speaker)  # ✅ Fixed
+
+            # Check completion
+            # Check completion - let OpenAI decide + safety limit
+            # Check completion - only safety limit, let prompt handle natural ending
+            if conversation.turn_count + 1 >= conversation.max_turns:
+                await self.network_repo.conversations.end_session(conversation.id, "max_turns_reached")
+            
+            # Update stats
+            await self.network_repo.mj_registry.increment_stats(user_id=from_user_id, messages_sent=1)
+            await self.network_repo.mj_registry.increment_stats(user_id=to_user_id, messages_received=1)
+            
+            return {
+                "message": message,
+                "from_user_id": from_user_id,
+                "to_user_id": to_user_id,
+                "turn_count": conversation.turn_count + 1,
+                "session_status": "completed" if conversation.turn_count + 1 >= conversation.max_turns else "in_progress"
+            }
+            
+        except Exception as e:
+            # Log the error but don't let it crash the approval process
+            print(f"Failed to generate auto response: {e}")
+            raise e
+        
     async def _check_user_online_status(self, user_id: int) -> bool:
         """
         Check if a user's MJ is currently online and available for immediate delivery
@@ -345,54 +445,25 @@ class MJCommunicationService:
             "delivered": target_user_online
         }
     
-    async def get_pending_responses(self, user_id: int) -> List[Dict[str, Any]]:
+    async def get_pending_approvals(self, user_id: int) -> List[Dict[str, Any]]:
         """
-        🆕 NEW: Get all draft responses awaiting user approval
+        Get objectives pending approval for this user
         """
         
-        # Get all draft messages where this user is the sender
-        from sqlalchemy import select
-        from ...models.database.mj_network import MJMessage
+        pending_conversations = await self.network_repo.conversations.get_pending_approvals_for_user(user_id)
         
-        result = await self.db.execute(
-            select(MJMessage)
-            .where(MJMessage.from_user_id == user_id)
-            .where(MJMessage.approval_status == "draft")
-            .order_by(MJMessage.created_at.desc())
-        )
-        
-        draft_messages = result.scalars().all()
-        
-        pending_responses = []
-        for message in draft_messages:
-            # Get the original request message to provide context
-            original_request = await self.network_repo.messages.get_conversation_messages(
-                conversation_id=message.conversation_id,
-                limit=10
-            )
-            
-            # Find the request that this draft is responding to
-            request_message = None
-            for msg in original_request:
-                if (msg.from_user_id == message.to_user_id and 
-                    msg.to_user_id == message.from_user_id and
-                    msg.message_type == MessageType.QUESTION.value):
-                    request_message = msg
-                    break
-            
-            pending_responses.append({
-                "draft_message_id": message.id,
-                "conversation_id": message.conversation_id,
-                "requesting_user_id": message.to_user_id,
-                "draft_content": message.message_content,
-                "original_request": request_message.message_content if request_message else "Unknown request",
-                "memories_used": message.user_memories_used,
-                "privacy_settings": message.privacy_settings_applied,
-                "created_at": message.created_at,
-                "tokens_used": message.tokens_used
+        pending_approvals = []
+        for conversation in pending_conversations:
+            pending_approvals.append({
+                "conversation_id": conversation.id,
+                "objective": conversation.objective,
+                "conversation_topic": conversation.conversation_topic,
+                "initiated_by_user_id": conversation.initiated_by_user_id,
+                "max_turns": conversation.max_turns,
+                "created_at": conversation.created_at
             })
         
-        return pending_responses
+        return pending_approvals
 
     # Keep all existing methods unchanged
     async def _generate_mj_response(
@@ -401,7 +472,9 @@ class MJCommunicationService:
         to_user_id: int,
         message_purpose: str,
         privacy_settings: Dict[str, Any],
-        relationship_type: str
+        relationship_type: str,
+        conversation_id: Optional[int] = None,
+        conversation_data: Optional[Dict[str, Any]] = None  # Add this
     ) -> Dict[str, Any]:
         """
         🧠 THE CORE AI GENERATION - Unchanged, still generates responses
@@ -411,39 +484,95 @@ class MJCommunicationService:
         
         # Step 1: Get target user's memories for context
         try:
-            target_user_memories = await self.memory_repo.get_recent_memories(
-                user_id=to_user_id,
+            speaker_user_memories = await self.memory_repo.get_recent_memories(
+                user_id=from_user_id, 
                 limit=10,
                 days=30
             )
-            print(f"💭 Found {len(target_user_memories)} memories for context")
+            print(f"💭 Found {len(speaker_user_memories)} memories for context")
+
         except Exception as e:
             print(f"⚠️ Memory retrieval failed: {e}")
-            target_user_memories = []
+            speaker_user_memories = []
+
         
         # Step 2: Build context from memories
         context_parts = []
         memories_used = []
         
-        for memory in target_user_memories:
-            context_parts.append(f"- {memory.fact} (confidence: {memory.confidence})")
+        for memory in speaker_user_memories:
+            # Include context in the formatted string if available
+            if hasattr(memory, 'context') and memory.context:
+                context_parts.append(f"- {memory.fact} (context: {memory.context}, confidence: {memory.confidence})")
+            else:
+                context_parts.append(f"- {memory.fact} (confidence: {memory.confidence})")
+            
             memories_used.append({
                 "id": memory.id,
                 "fact": memory.fact,
                 "category": memory.category,
-                "confidence": memory.confidence
+                "confidence": memory.confidence,
+                "context": getattr(memory, 'context', None)  # Add context field
             })
         
         user_context = "\n".join(context_parts) if context_parts else "No specific memories available."
         
         # Step 3: Build MJ-to-MJ prompt
+        # Get usernames for the prompt
+        # Get usernames for the prompt
+        from_user = await self.db.execute(select(User).where(User.id == from_user_id))
+        to_user = await self.db.execute(select(User).where(User.id == to_user_id))
+
+        from_user_obj = from_user.scalar_one_or_none()
+        to_user_obj = to_user.scalar_one_or_none()
+
+        from_username = from_user_obj.username if from_user_obj else f"User{from_user_id}"
+        to_username = to_user_obj.username if to_user_obj else f"User{to_user_id}"
+
+        # Get conversation history properly
+        # Get conversation history properly
+        # This method doesn't have access to conversation_id, so we need to pass it
+        # For now, we'll skip conversation history in this legacy method
+        # Get conversation history (if conversation_id is provided)
+        if conversation_id:
+            conversation_messages = await self.network_repo.messages.get_conversation_messages(
+                conversation_id=conversation_id,
+                limit=10
+            )
+        else:
+            conversation_messages = []
+
+        # Format conversation history for the prompt
+        formatted_history = []
+        for msg in conversation_messages:
+            speaker = from_username if msg.from_user_id == from_user_id else to_username
+            formatted_history.append(f"{speaker}: {msg.message_content}")
+
+        history_text = "\n".join(formatted_history) if formatted_history else "This is the start of your conversation."
+
+        # Format memories for the prompt
+        # Format memories for the prompt
+        formatted_memories = []
+        for memory in speaker_user_memories:
+            formatted_memories.append({
+                "fact": memory.fact,
+                "confidence": memory.confidence,
+                "context": getattr(memory, 'context', None)  # Add context here too
+            })
+
+# Use legacy prompt parameters since we don't have conversation object here
         prompt = PersonalityPrompts.build_mj_to_mj_prompt(
-            message_purpose=message_purpose,
+            objective=message_purpose,
+            conversation_history=history_text,
             user_context=user_context,
+            user_memories=formatted_memories,
             privacy_settings=privacy_settings,
             relationship_type=relationship_type,
-            from_user_id=from_user_id,
-            to_user_id=to_user_id
+            turn_count=conversation_data["turn_count"] if conversation_data else 1,
+            max_turns=conversation_data["max_turns"] if conversation_data else 10,
+            current_speaker_name=from_username,
+            other_speaker_name=to_username,
+            session_status=conversation_data["session_status"] if conversation_data else "in_progress"
         )
         
         print(f"📝 Built MJ-to-MJ prompt ({len(prompt)} chars)")
@@ -529,11 +658,11 @@ class MJCommunicationService:
         if not conversation:
             return []
         
+        # Get conversation history
         messages = await self.network_repo.messages.get_conversation_messages(
-            conversation_id=conversation.id,
-            limit=limit
+            conversation_id=conversation.id,  # ✅ Use conversation.id
+            limit=10
         )
-        
         formatted_messages = []
         for message in messages:
             # Only include sent messages in conversation history, not drafts

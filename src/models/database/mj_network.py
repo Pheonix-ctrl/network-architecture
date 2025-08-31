@@ -56,12 +56,18 @@ class MessageType(str, enum.Enum):
     CHECK_IN = "check_in"
     QUESTION = "question"
     RESPONSE = "response"
-
+    
 class DeliveryStatus(str, enum.Enum):
     PENDING = "pending"
     DELIVERED = "delivered"
     READ = "read"
     FAILED = "failed"
+
+class SessionStatus(str, enum.Enum):
+    PENDING_APPROVAL = "pending_approval"
+    IN_PROGRESS = "in_progress"
+    COMPLETED = "completed"
+    EXPIRED = "expired"
 
 class PendingMessageStatus(str, enum.Enum):
     QUEUED = "queued"
@@ -233,6 +239,14 @@ class MJConversation(Base):
     started_at = Column(DateTime(timezone=True), server_default=func.now())
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    # Session management fields for auto-chat
+    session_status = Column(String(20), nullable=True, index=True)
+    objective = Column(Text, nullable=True)
+    turn_count = Column(Integer, default=0)
+    max_turns = Column(Integer, default=6)
+    session_expires_at = Column(DateTime(timezone=True), nullable=True, index=True)
+    next_speaker_id = Column(Integer, nullable=True, index=True)
+    auto_approved_by = Column(Integer, nullable=True)
     
     user_a = relationship("User", foreign_keys=[user_a_id], back_populates="mj_conversations_as_a")
     user_b = relationship("User", foreign_keys=[user_b_id], back_populates="mj_conversations_as_b")
@@ -244,6 +258,7 @@ class MJConversation(Base):
     __table_args__ = (
         CheckConstraint("status IN ('active','archived','blocked')", name='check_conversation_status'),
         CheckConstraint("privacy_level IN ('minimal','normal','detailed')", name='check_privacy_level'),
+        CheckConstraint("session_status IN ('pending_approval','in_progress','completed','expired')", name='check_session_status'),
         CheckConstraint('user_a_id != user_b_id', name='check_different_users'),
     )
 
