@@ -8,9 +8,13 @@ from fastapi.security import HTTPBearer
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import asyncpg
+from typing import Dict, Set
+import asyncio
 import bcrypt
 import jwt
 from datetime import datetime
+from dotenv import load_dotenv
+
 import json
 from src.services.background.session_processor import session_processor
 # Add this import at the top with other imports
@@ -29,6 +33,69 @@ from src.core.security import create_access_token, verify_token
 import openai
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
+class ConnectionManager:
+    def __init__(self):
+        self.active_connections: Dict[int, WebSocket] = {}
+        self.user_friends_cache: Dict[int, Set[int]] = {}
+    
+    async def connect(self, user_id: int, websocket: WebSocket):
+        """Add new WebSocket connection"""
+        self.active_connections[user_id] = websocket
+        await self.update_user_friends_cache(user_id)
+        print(f"✅ User {user_id} connected. Total connections: {len(self.active_connections)}")
+    
+    def disconnect(self, user_id: int):
+        """Remove WebSocket connection"""
+        self.active_connections.pop(user_id, None)
+        self.user_friends_cache.pop(user_id, None)
+        print(f"❌ User {user_id} disconnected. Total connections: {len(self.active_connections)}")
+    
+    async def update_user_friends_cache(self, user_id: int):
+        """Cache user's friends for fast broadcasting"""
+        pool = await get_db_pool()
+        if not pool:
+            return
+        
+        try:
+            async with pool.acquire() as conn:
+                friends = await conn.fetch(
+                    "SELECT friend_user_id FROM relationships_network WHERE user_id = $1 AND status = 'active'",
+                    user_id
+                )
+                self.user_friends_cache[user_id] = {friend['friend_user_id'] for friend in friends}
+        except Exception as e:
+            print(f"❌ Failed to cache friends for user {user_id}: {e}")
+    
+    async def send_to_user(self, user_id: int, message: dict):
+        """Send message to specific user"""
+        if user_id in self.active_connections:
+            try:
+                websocket = self.active_connections[user_id]
+                await websocket.send_text(json.dumps(message))
+                return True
+            except Exception as e:
+                print(f"❌ Failed to send to user {user_id}: {e}")
+                self.disconnect(user_id)
+                return False
+        return False
+    
+    async def broadcast_to_friends(self, user_id: int, message: dict, include_self: bool = False):
+        """Broadcast message to user's friends"""
+        friends = self.user_friends_cache.get(user_id, set())
+        sent_count = 0
+        
+        for friend_id in friends:
+            if await self.send_to_user(friend_id, message):
+                sent_count += 1
+        
+        if include_self:
+            await self.send_to_user(user_id, message)
+        
+        print(f"📡 Broadcasted to {sent_count} friends of user {user_id}")
+        return sent_count
+
+# Create global connection manager
+connection_manager = ConnectionManager()
 # Simple models (existing)
 class LoginRequest(BaseModel):
     email: str
@@ -59,7 +126,7 @@ print(f"Using AsyncPG URL: {ASYNCPG_DATABASE_URL}")
 
 # Global database pool
 db_pool = None
-
+active_connections = {}
 async def get_db_pool():
     global db_pool
     if not db_pool:
@@ -543,15 +610,19 @@ async def deliver_pending_mj_messages(user_id: int):
         from src.services.mj_network.mj_communication import MJCommunicationService
         
         async with AsyncSessionLocal() as db:
-            communication_service = MJCommunicationService(db)
+            # Pass connection_manager here too!
+            communication_service = MJCommunicationService(db, connection_manager)
             delivered_count = await communication_service.deliver_pending_messages(user_id)
             
             if delivered_count > 0:
                 print(f"📨 Delivered {delivered_count} pending MJ messages to user {user_id}")
                 
-                # 🚨 NOTIFY USER VIA WEBSOCKET OF NEW MJ MESSAGES
-
-                    
+                # Now this will work - notify via WebSocket!
+                await connection_manager.send_to_user(user_id, {
+                    "type": "pending_mj_messages",
+                    "count": delivered_count,
+                    "message": f"You have {delivered_count} new MJ messages"
+                })
                     
     except Exception as e:
         print(f"❌ Failed to deliver pending messages for user {user_id}: {e}")
@@ -561,36 +632,174 @@ async def deliver_pending_mj_messages(user_id: int):
 @app.websocket("/ws/{user_id}")
 async def websocket_endpoint(websocket: WebSocket, user_id: int):
     await websocket.accept()
-    print(f"User {user_id} connected via WebSocket for MJ chat")
+    await connection_manager.connect(user_id, websocket)
+    
+    # Update user status to online
+    await update_mj_status(user_id, "online")
+    
+    # Check for pending MJ chat requests when user comes online
+    try:
+        from src.config.database import AsyncSessionLocal
+        from src.services.mj_network.mj_communication import MJCommunicationService
+        
+        async with AsyncSessionLocal() as db:
+            # Pass connection_manager to the service
+            communication_service = MJCommunicationService(db, connection_manager)
+            
+            # Get pending requests for this user
+            pending_requests = await communication_service.handle_user_comes_online(user_id)
+            
+            if pending_requests:
+                # Send notification about pending requests
+                await websocket.send_text(json.dumps({
+                    "type": "pending_mj_chat_requests",
+                    "requests": [{
+                        "conversation_id": req.id,
+                        "from_user_id": req.initiated_by_user_id,
+                        "objective": req.objective,
+                        "conversation_topic": req.conversation_topic,
+                        "created_at": req.created_at.isoformat() if req.created_at else None
+                    } for req in pending_requests],
+                    "count": len(pending_requests),
+                    "message": f"You have {len(pending_requests)} pending MJ chat request(s)"
+                }))
+                print(f"📨 Notified user {user_id} about {len(pending_requests)} pending MJ chat requests")
+                
+    except Exception as e:
+        print(f"Failed to check pending MJ chat requests: {e}")
+    
+    # Deliver any pending MJ messages
+    await deliver_pending_mj_messages(user_id)
+    
+    # Notify friends that user came online
+    await connection_manager.broadcast_to_friends(user_id, {
+        "type": "friend_online",
+        "user_id": user_id,
+        "username": await get_username(user_id),
+        "timestamp": datetime.now().isoformat()
+    })
     
     try:
         while True:
-            # Receive user message
             data = await websocket.receive_text()
             message_data = json.loads(data)
-            user_message = message_data.get("message", "")
+            message_type = message_data.get("type", "mj_chat")
             
-            if not user_message.strip():
-                continue
+            if message_type == "mj_chat":
+                # Handle existing user-to-MJ chat
+                user_message = message_data.get("message", "")
+                if user_message.strip():
+                    response = await process_styled_mj_message(user_message, user_id)
+                    await websocket.send_text(json.dumps({
+                        "type": "mj_response",
+                        "content": response,
+                        "timestamp": datetime.now().isoformat()
+                    }))
             
-            print(f"User {user_id}: {user_message}")
+            elif message_type == "location_update":
+                # Handle location updates from map
+                await handle_location_update_broadcast(user_id, message_data)
             
-            # Process with your existing MJ logic
-            response = await process_styled_mj_message(user_message, user_id)
+            elif message_type == "friend_request_sent":
+                # Handle friend request notifications
+                await handle_friend_request_notification(user_id, message_data)
             
-            # Send response back to user
-            response_data = {
-                "type": "message",
-                "content": response,
-                "timestamp": datetime.now().isoformat()
-            }
-            
-            await websocket.send_text(json.dumps(response_data))
-            
+            elif message_type == "ping":
+                # Handle keepalive pings
+                await websocket.send_text(json.dumps({"type": "pong"}))
+                
     except WebSocketDisconnect:
-        print(f"User {user_id} disconnected from MJ chat")
+        connection_manager.disconnect(user_id)
+        await update_mj_status(user_id, "offline")
+        
+        # Notify friends that user went offline
+        await connection_manager.broadcast_to_friends(user_id, {
+            "type": "friend_offline", 
+            "user_id": user_id,
+            "username": await get_username(user_id),
+            "timestamp": datetime.now().isoformat()
+        })
+        
+        print(f"User {user_id} disconnected from WebSocket")
     except Exception as e:
         print(f"WebSocket error for user {user_id}: {e}")
+        connection_manager.disconnect(user_id)
+
+
+async def get_username(user_id: int) -> str:
+    """Get username for a user ID"""
+    pool = await get_db_pool()
+    if not pool:
+        return f"User{user_id}"
+    
+    try:
+        async with pool.acquire() as conn:
+            result = await conn.fetchval("SELECT username FROM users WHERE id = $1", user_id)
+            return result or f"User{user_id}"
+    except Exception:
+        return f"User{user_id}"
+
+async def handle_location_update_broadcast(user_id: int, location_data: dict):
+    """Handle location update and broadcast to friends"""
+    try:
+        # Extract location data
+        latitude = location_data.get("latitude")
+        longitude = location_data.get("longitude") 
+        accuracy = location_data.get("accuracy_meters", 0)
+        
+        if not latitude or not longitude:
+            return
+        
+        # Update database
+        pool = await get_db_pool()
+        if pool:
+            async with pool.acquire() as conn:
+                await conn.execute("""
+                    INSERT INTO user_locations (user_id, latitude, longitude, accuracy_meters, is_current_location)
+                    VALUES ($1, $2, $3, $4, true)
+                    ON CONFLICT (user_id) DO UPDATE SET
+                        latitude = EXCLUDED.latitude,
+                        longitude = EXCLUDED.longitude,  
+                        accuracy_meters = EXCLUDED.accuracy_meters,
+                        created_at = NOW(),
+                        expires_at = NOW() + INTERVAL '12 hours'
+                """, user_id, latitude, longitude, accuracy)
+        
+        # Broadcast to friends
+        username = await get_username(user_id)
+        await connection_manager.broadcast_to_friends(user_id, {
+            "type": "friend_location_update",
+            "user_id": user_id,
+            "username": username,
+            "latitude": latitude,
+            "longitude": longitude,
+            "accuracy_meters": accuracy,
+            "timestamp": datetime.now().isoformat()
+        })
+        
+        print(f"📍 Location updated and broadcasted for user {user_id}")
+        
+    except Exception as e:
+        print(f"❌ Location update broadcast failed for user {user_id}: {e}")
+
+async def handle_friend_request_notification(user_id: int, request_data: dict):
+    """Handle friend request sent notification"""
+    try:
+        target_user_id = request_data.get("target_user_id")
+        requester_username = await get_username(user_id)
+        
+        if target_user_id:
+            await connection_manager.send_to_user(target_user_id, {
+                "type": "friend_request_received",
+                "from_user_id": user_id,
+                "from_username": requester_username,
+                "message": request_data.get("message", ""),
+                "discovery_method": request_data.get("discovery_method", "map"),
+                "timestamp": datetime.now().isoformat()
+            })
+            
+    except Exception as e:
+        print(f"❌ Friend request notification failed: {e}")
 # =====================================================
 # EXISTING MJ PROCESSING FUNCTIONS (UPDATED)
 # =====================================================

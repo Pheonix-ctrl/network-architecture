@@ -29,22 +29,44 @@ def serialize_for_json(obj):
     return obj
 
 class MJCommunicationService:
-    """Core service for MJ-to-MJ communication - Modified for draft approval workflow"""
-    
-    def __init__(self, db: AsyncSession):
+    def __init__(self, db: AsyncSession, connection_manager=None):
         self.db = db
         self.network_repo = MJNetworkRepository(db)
         self.memory_repo = MemoryRepository(db)
         self.openai_client = OpenAIClient()
+        self.connection_manager = connection_manager  # Add this!
+    
+    def is_user_connected(self, user_id: int) -> bool:
+        """Check if user has active WebSocket connection"""
+        if self.connection_manager:
+            return user_id in self.connection_manager.active_connections
+        return False
+    
+    async def send_websocket_message(self, user_id: int, data: dict):
+        """Send message via WebSocket using the connection manager"""
+        if self.connection_manager:
+            return await self.connection_manager.send_to_user(user_id, data)
+        return False
+    
+    async def notify_user_of_pending_request(self, user_id: int, conversation_id: str):
+        """Send WebSocket notification about pending MJ chat request"""
+        await self.send_websocket_message(
+            user_id,
+            {
+                "type": "pending_mj_chat_request",
+                "conversation_id": conversation_id,
+                "message": "You have a new MJ chat request waiting for approval"
+            }
+        )
     
     async def initiate_mj_conversation(
-        self,
-        from_user_id: int,
-        to_user_id: int,
-        objective: str,
-        conversation_topic: Optional[str] = None,
-        max_turns: int = 10  # ✅ Change from 6 to 10
-    ) -> Dict[str, Any]:
+            self,
+            from_user_id: int,
+            to_user_id: int,
+            objective: str,
+            conversation_topic: Optional[str] = None,
+            max_turns: int = 10
+        ) -> Dict[str, Any]:
         """
         Create a pending auto-chat session that needs objective approval
         """
@@ -57,12 +79,11 @@ class MJCommunicationService:
         if not relationship:
             raise ValueError("Users are not friends. Send a friend request first.")
         
-        # Step 2: Check if target user is online (required for approval)
+        # Step 2: Check target user status (BUT DON'T BLOCK!)
         target_mj_registry = await self.network_repo.mj_registry.get_by_user_id(to_user_id)
-        if not target_mj_registry or target_mj_registry.status != MJStatus.ONLINE.value:
-            raise ValueError("Target user must be online to approve auto-chat objectives")
+        target_online = target_mj_registry and target_mj_registry.status == MJStatus.ONLINE.value
         
-        # Step 3: Create pending session
+        # Step 3: Create pending session REGARDLESS of online status
         conversation = await self.network_repo.conversations.create_pending_session(
             user_a_id=from_user_id,
             user_b_id=to_user_id,
@@ -74,12 +95,55 @@ class MJCommunicationService:
         
         print(f"Created pending session: {conversation.id}")
         
+        # Step 4: If target is online, notify them immediately
+        if target_online:
+            # Send real-time notification via WebSocket
+            await self.notify_user_of_pending_request(to_user_id, conversation.id)
+            notification_status = "notified_immediately"
+        else:
+            # They'll see it when they come online
+            notification_status = "will_notify_on_login"
+        
         return {
             "conversation": conversation,
             "objective": objective,
             "status": "pending_approval",
-            "requires_approval_from": to_user_id
+            "requires_approval_from": to_user_id,
+            "target_online": target_online,
+            "notification_status": notification_status
         }
+    
+    async def handle_user_comes_online(self, user_id: int):
+        """
+        When a user comes online, check for pending MJ chat requests
+        """
+        # Get all pending conversations waiting for this user's approval
+        pending_requests = await self.network_repo.conversations.get_pending_for_user(user_id)
+        
+        if pending_requests:
+            # Notify them about pending requests
+            for request in pending_requests:
+                await self.notify_user_of_pending_request(user_id, request.id)
+            
+            print(f"User {user_id} has {len(pending_requests)} pending MJ chat requests")
+            return pending_requests
+        
+        return []
+
+    async def notify_user_of_pending_request(self, user_id: int, conversation_id: str):
+        """
+        Send WebSocket notification about pending MJ chat request
+        """
+        # Send via WebSocket if connected
+        if self.is_user_connected(user_id):
+            await self.send_websocket_message(
+                user_id,
+                {
+                    "type": "pending_mj_chat_request",
+                    "conversation_id": conversation_id,
+                    "message": "You have a new MJ chat request waiting for approval"
+                }
+            )
     async def approve_objective(self, conversation_id: int, user_id: int, approved: bool = True) -> Dict[str, Any]:
 
     
@@ -172,7 +236,7 @@ class MJCommunicationService:
             # Get conversation history
             messages = await self.network_repo.messages.get_conversation_messages(
                 conversation_id=conversation_id,
-                limit=10
+                limit=20
             )
             
             # Determine speakers
@@ -474,10 +538,10 @@ class MJCommunicationService:
         privacy_settings: Dict[str, Any],
         relationship_type: str,
         conversation_id: Optional[int] = None,
-        conversation_data: Optional[Dict[str, Any]] = None  # Add this
+        conversation_data: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """
-        🧠 THE CORE AI GENERATION - Unchanged, still generates responses
+        🧠 THE CORE AI GENERATION - Modified to only send fact and context
         """
         
         print(f"🧠 Generating MJ response with privacy level: {privacy_settings}")
@@ -496,30 +560,30 @@ class MJCommunicationService:
             speaker_user_memories = []
 
         
-        # Step 2: Build context from memories
+        # Step 2: Build SIMPLIFIED context from memories (ONLY fact and context)
         context_parts = []
         memories_used = []
         
         for memory in speaker_user_memories:
-            # Include context in the formatted string if available
-            if hasattr(memory, 'context') and memory.context:
-                context_parts.append(f"- {memory.fact} (context: {memory.context}, confidence: {memory.confidence})")
-            else:
-                context_parts.append(f"- {memory.fact} (confidence: {memory.confidence})")
+            # SIMPLIFIED - Only include fact and context
+            fact = memory.fact
+            context = getattr(memory, 'context', None)
             
+            if context:
+                context_parts.append(f"- {fact} (context: {context})")
+            else:
+                context_parts.append(f"- {fact}")
+            
+            # Track what we're using (simplified)
             memories_used.append({
-                "id": memory.id,
-                "fact": memory.fact,
-                "category": memory.category,
-                "confidence": memory.confidence,
-                "context": getattr(memory, 'context', None)  # Add context field
+                "id": memory.id,  # Keep ID for internal tracking only
+                "fact": fact,
+                "context": context
             })
         
         user_context = "\n".join(context_parts) if context_parts else "No specific memories available."
         
         # Step 3: Build MJ-to-MJ prompt
-        # Get usernames for the prompt
-        # Get usernames for the prompt
         from_user = await self.db.execute(select(User).where(User.id == from_user_id))
         to_user = await self.db.execute(select(User).where(User.id == to_user_id))
 
@@ -529,11 +593,7 @@ class MJCommunicationService:
         from_username = from_user_obj.username if from_user_obj else f"User{from_user_id}"
         to_username = to_user_obj.username if to_user_obj else f"User{to_user_id}"
 
-        # Get conversation history properly
-        # Get conversation history properly
-        # This method doesn't have access to conversation_id, so we need to pass it
-        # For now, we'll skip conversation history in this legacy method
-        # Get conversation history (if conversation_id is provided)
+        # Get conversation history
         if conversation_id:
             conversation_messages = await self.network_repo.messages.get_conversation_messages(
                 conversation_id=conversation_id,
@@ -542,7 +602,7 @@ class MJCommunicationService:
         else:
             conversation_messages = []
 
-        # Format conversation history for the prompt
+        # Format conversation history
         formatted_history = []
         for msg in conversation_messages:
             speaker = from_username if msg.from_user_id == from_user_id else to_username
@@ -550,22 +610,23 @@ class MJCommunicationService:
 
         history_text = "\n".join(formatted_history) if formatted_history else "This is the start of your conversation."
 
-        # Format memories for the prompt
-        # Format memories for the prompt
+        # SIMPLIFIED memories for prompt (only fact and context)
         formatted_memories = []
         for memory in speaker_user_memories:
-            formatted_memories.append({
-                "fact": memory.fact,
-                "confidence": memory.confidence,
-                "context": getattr(memory, 'context', None)  # Add context here too
-            })
+            # Only pass fact and context, no confidence
+            memory_dict = {
+                "fact": memory.fact
+            }
+            if hasattr(memory, 'context') and memory.context:
+                memory_dict["context"] = memory.context
+            formatted_memories.append(memory_dict)
 
-# Use legacy prompt parameters since we don't have conversation object here
+        # Build the prompt with SIMPLIFIED memory data
         prompt = PersonalityPrompts.build_mj_to_mj_prompt(
             objective=message_purpose,
             conversation_history=history_text,
-            user_context=user_context,
-            user_memories=formatted_memories,
+            user_context=user_context,  # Now only contains fact and context
+            user_memories=formatted_memories,  # Now only contains fact and context
             privacy_settings=privacy_settings,
             relationship_type=relationship_type,
             turn_count=conversation_data["turn_count"] if conversation_data else 1,
@@ -608,7 +669,7 @@ class MJCommunicationService:
             "prompt_used": prompt,
             "raw_response": openai_response.get("content", "") if 'openai_response' in locals() else "",
             "privacy_settings_applied": privacy_settings,
-            "memories_used": memories_used,
+            "memories_used": memories_used,  # Now only contains id, fact, and context
             "tokens_used": tokens_used
         }
     

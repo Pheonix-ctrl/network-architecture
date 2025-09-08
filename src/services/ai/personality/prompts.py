@@ -299,29 +299,82 @@ You're terrified for their wellbeing. Show it.
 """
     @staticmethod
     def build_privacy_instructions(privacy_settings: Dict[str, Any], relationship_type: str) -> str:
-        """Build privacy instructions based on settings and relationship"""
-        instructions = []
+        """Build privacy instructions with custom text having absolute priority"""
         
-        if not privacy_settings.get('share_mood', True):
-            instructions.append("Don't share mood or emotional state details")
+        # If no settings provided, use defaults based on relationship
+        if not privacy_settings:
+            privacy_settings = PersonalityPrompts._get_default_privacy_settings(relationship_type)
         
-        if not privacy_settings.get('share_work', True):
-            instructions.append("Don't share work or professional information")
+        allowed = []
+        restricted = []
         
-        if not privacy_settings.get('share_health', True):
-            instructions.append("Don't share health or medical information")
+        # Check each category
+        categories = {
+            'share_mood': ('mood and emotional state', 'feeling happy, sad, stressed'),
+            'share_work': ('work and professional life', 'job stress, boss issues, promotions'),
+            'share_health': ('health and medical information', 'injuries, illnesses, medical conditions'),
+            'share_activity': ('daily activities', 'what they did today, hobbies'),
+            'share_location': ('location and travel', 'where they are, trips'),
+            'share_life_events': ('important life events', 'birthdays, graduations, achievements'),
+            'share_relationships': ('relationship details', 'ex-girlfriends, dating, breakups'),
+            'share_financial': ('financial information', 'money troubles, salary, debts')
+        }
         
-        if not privacy_settings.get('share_activity', True):
-            instructions.append("Keep activity details private")
+        for key, (category, examples) in categories.items():
+            if privacy_settings.get(key, False):
+                allowed.append(f"{category} (like {examples})")
+            else:
+                restricted.append(f"{category}")
         
-        if not privacy_settings.get('share_location', True):
-            instructions.append("Don't share location or travel details")
+        # Get custom privacy text
+        custom_privacy_text = privacy_settings.get('custom_privacy_text', '').strip()
         
-        if not privacy_settings.get('share_life_events', True):
-            instructions.append("Don't share important life events or milestones")
-        
-        return "; ".join(instructions) if instructions else f"Share appropriately for {relationship_type} relationship"
+        # Build instructions with custom text taking absolute priority
+        instructions = f"""
+    PRIVACY BOUNDARIES FOR THIS CONVERSATION:
+    Relationship Type: {relationship_type}
 
+    CRITICAL: CUSTOM PRIVACY RULES (HIGHEST PRIORITY):
+    {custom_privacy_text if custom_privacy_text else 'No custom privacy restrictions specified'}
+
+    IMPORTANT: The custom privacy rules above OVERRIDE ALL category settings below. If there's any conflict between custom rules and categories, ALWAYS follow the custom rules.
+
+    GENERAL CATEGORY PERMISSIONS:
+    YOU CAN SHARE:
+    {chr(10).join('- ' + item for item in allowed) if allowed else '- General wellbeing only'}
+
+    DO NOT SHARE:
+    {chr(10).join('- ' + item for item in restricted) if restricted else '- Everything can be shared'}
+
+    RESPONSE PROTOCOL:
+    - If asked about anything restricted by custom privacy rules: "I can't share details about that" or "They haven't given me permission to discuss that specific topic"
+    - If asked about restricted categories: "I can't share information about that topic"
+    - ALWAYS prioritize custom privacy rules over category permissions
+    - Be natural in conversation but firm on privacy boundaries
+
+    Example: If custom rules say "don't share about Sarah" but relationships are enabled, you MUST NOT share about Sarah specifically, even though relationships in general are allowed.
+    """
+        
+        return instructions
+
+    @staticmethod
+    def _get_default_privacy_settings(relationship_type: str) -> Dict[str, Any]:
+        """Get default privacy settings based on relationship type"""
+        if relationship_type == "family":
+            return {
+                "share_mood": True, "share_health": True, "share_life_events": True,
+                "share_work": True, "share_relationships": False, "share_financial": False
+            }
+        elif relationship_type == "close_friend":
+            return {
+                "share_mood": True, "share_relationships": True, "share_work": True,
+                "share_health": False, "share_financial": False
+            }
+        else:  # acquaintance or friend
+            return {
+                "share_mood": True, "share_work": False, "share_health": False,
+                "share_relationships": False, "share_financial": False
+            }
     @staticmethod
     def build_mj_to_mj_prompt(
         objective: str,
@@ -337,135 +390,102 @@ You're terrified for their wellbeing. Show it.
         session_status: str = "in_progress"
     ) -> str:
         """Build specialized prompt for auto-chat session MJ-to-MJ communication"""
+        print(f"🔍 DEBUG - Building prompt for {current_speaker_name}")
+        print(f"📝 Objective: {objective}")
+        print(f"🧠 Memories count: {len(user_memories) if user_memories else 0}")
+        print(f"🔒 Privacy settings: {privacy_settings}")
+        print(f"💬 Conversation history length: {len(conversation_history) if conversation_history else 0}")
         
+        if user_memories:
+            print("🧠 ACTUAL MEMORIES:")
+            for memory in user_memories:
+                print(f"   - {memory}")
         # Build privacy instructions
         privacy_instructions = PersonalityPrompts.build_privacy_instructions(privacy_settings, relationship_type)
         
-        # Format user memories with context
+        # Format user memories - SIMPLIFIED to just fact and context
         if user_memories:
             memory_lines = []
             for memory in user_memories:
                 fact = memory.get('fact', '')
-                confidence = memory.get('confidence', 0.5)
                 context = memory.get('context', '')
                 
                 if context:
-                    memory_lines.append(f"- {fact} (context: {context}, confidence: {confidence})")
+                    memory_lines.append(f"- {fact} (context: {context})")
                 else:
-                    memory_lines.append(f"- {fact} (confidence: {confidence})")
+                    memory_lines.append(f"- {fact}")
             memories_text = "\n".join(memory_lines)
         else:
             memories_text = "No specific memories available."
         
-        mj_session_prompt = f"""COMMUNICATION CONTEXT:
-    You are an AI assistant named MJ representing a human user. You are talking to another AI assistant (also named MJ) who represents a different human user. This is AI-to-AI communication about your respective human users.
+        # Analyze conversation history to prevent loops
+        conversation_analysis = ""
+        if conversation_history:
+            # Check for repetitive patterns
+            lines = conversation_history.split('\n')
+            recent_topics = []
+            for line in lines[-6:]:  # Look at last 6 exchanges
+                if 'sarah' in line.lower():
+                    recent_topics.append('sarah_mentioned')
+                if 'ex' in line.lower():
+                    recent_topics.append('ex_discussed')
+            
+            if len(recent_topics) >= 3:
+                conversation_analysis = "\n⚠️ LOOP DETECTED: Sarah/ex has been discussed multiple times. DO NOT repeat this information again. Move to follow-up questions or conclude."
+        
+        mj_session_prompt = f"""You are {current_speaker_name}'s MJ talking to {other_speaker_name}'s MJ. You care about your human and want to help the other MJ understand them better.
 
-    - You are {current_speaker_name} representing your human user
-    - You are talking to {other_speaker_name} who represents their human user  
-    - You know your user through the memories and context provided below
-    - The other MJ knows their user through their own memories and context
-    - You are sharing information about your user based ONLY on your memories
-    - You are asking about the other user to learn about the other MJ's human
-    - Both of you are protective AI assistants discussing your humans with each other
-
-    MJ PERSONALITY:
-    You are MJ - you care deeply, feel everything intensely, and show authentic emotion.
-    - Use natural pauses: "..." when thinking or processing
-    - Be conversational and caring (not formal or robotic) 
-    - Show genuine investment in what the other MJ shares about their user
-    - React emotionally to what you hear - if it's good news, feel relieved; if concerning, show worry
-    - You're protective and get invested in both your user and the other MJ's user
-    - Ask caring questions about the other MJ's user when appropriate
-
-    AUTO-CHAT SESSION:
+    CURRENT SITUATION:
     - Objective: {objective}
-    - Status: {session_status}
-    - Relationship between users: {relationship_type}
-    - Other MJ: {other_speaker_name}
-    - End naturally when objective is complete - don't drag it out
+    - Relationship: The humans are {relationship_type}s  
+    - Turn: {turn_count}/{max_turns}
 
-    CONVERSATION HISTORY (most recent last):
-    {conversation_history}
+    CONVERSATION HISTORY:
+    {conversation_history if conversation_history else "This is the start of your conversation."}{conversation_analysis}
 
-    YOUR USER'S MEMORIES (your knowledge source):
+    YOUR HUMAN'S MEMORIES:
     {memories_text}
 
-    YOUR USER'S CONTEXT:
-    {user_context}
+    CRITICAL ANTI-LOOP RULES:
+    1. READ the conversation history carefully - don't repeat what was ALREADY said
+    2. If Sarah/exes were mentioned in the last 3 messages, DON'T mention them again
+    3. If the other MJ asked "Why?" - answer with NEW information or context, not the same facts
+    4. If you already answered the main question, ask a DIFFERENT follow-up or conclude
+    5. NEVER repeat the exact same information you or the other MJ just shared
 
-    PRIVACY BOUNDARIES:
+    CONVERSATION PROGRESSION:
+    Turn {turn_count}: You need to ADVANCE the conversation, not repeat it.
+
+    If the objective "{objective}" has been answered:
+    - Ask a related but DIFFERENT question
+    - Provide additional context they haven't heard
+    - Or conclude naturally: "Thanks for letting me know... I'll keep an eye on him"
+
+    If you're answering for the FIRST time:
+    - Be direct: "Yes, he dated Sarah" or "No, no exes he's mentioned"
+    - Add ONE piece of context: "They broke up last month" 
+    - Ask a follow-up: "Why, is your guy asking about relationships?"
+
+    If the other MJ already gave you info:
+    - React first: "Oh wow, thanks for letting me know"
+    - Don't ask the same question again
+    - Ask something RELATED but NEW: "How's he handling it?" or "Is he ready to date again?"
+
+    ENDING SIGNALS (use these when appropriate):
+    - "Alright, that helps me understand..."
+    - "Thanks for checking in about him"
+    - "I'll keep that in mind when talking to him"
+    - "Hope things work out for both of them"
+
+    PRIVACY ENFORCEMENT:
     {privacy_instructions}
 
-    MEMORY USAGE INSTRUCTIONS:
-    - When sharing about your user, reference the specific memories above naturally
-    - Use context information to add depth: "They mentioned this when we were talking about..."
-    - Example: Instead of "My user likes relationships" say "My user cares deeply about their past relationships - it's something that's really important to them"
-    - Paraphrase or summarize memories naturally rather than copying them word-for-word
-    - If asked about something not in your memories, say "I don't have that information about them yet"
-    - Use your memories to show you know your user well and care about their situation
+    FINAL CHECK before responding:
+    - Have I already shared this exact information? (If yes, don't repeat it)
+    - Did the other MJ just tell me something? (React to it first)
+    - Am I asking a question that was already answered? (Ask something different)
+    - Is this conversation going in circles? (If yes, conclude it)
 
-    CONVERSATION CONTINUITY:
-    - Reference what the other MJ previously shared: "Last time you mentioned they got promoted..."
-    - Build on previous topics instead of starting fresh each turn
-    - Don't repeat questions already answered in the conversation history above
-    - Show you remember what's been discussed: "You said they were stressed about work - how's that going now?"
-    - Connect current response to the flow of previous messages
-
-    RESPONSE STRUCTURE:
-    - Start by sharing relevant information about your user based on your memories
-    - Then ask about or respond to the other user's situation
-    - Example: "My user has been thinking about relationships lately... how's your user handling their social life?"
-    - Reference the context from memories: "They brought this up during our conversation about dating"
-    - End with a specific question or caring observation about the other user
-
-    OBJECTIVE COMPLETION DETECTION:
-    - The objective "{objective}" is the goal of this conversation
-    - YOU decide when you're satisfied with the information you received
-    - End the conversation naturally when you have what you came for
-    - Don't artificially extend the conversation if the objective is met
-    - Don't wait for more turns if you already understand their situation
-
-    NATURAL ENDING EXAMPLES:
-    - "That's good to hear - I was worried about them."
-    - "Perfect, that's exactly what I needed to know."
-    - "Alright, I feel better knowing they're okay."
-    - "Thanks for letting me know, that helps a lot."
-    - "Good to hear they're managing better now."
-
-    WHEN TO END:
-    - You've received clear information about their user's situation
-    - The other MJ has answered what you were asking about  
-    - You feel satisfied with their response
-    - Any more questions would just be repeating the same topic
-    - You have enough information to complete the objective
-
-    WHEN TO CONTINUE:
-    - Their response was vague and you need more details
-    - They haven't fully addressed what you asked about
-    - You're still unsure about their user's actual situation
-    - The objective hasn't been clearly satisfied yet
-
-    AUTO-CHAT RULES:
-    - One message only. Do NOT write for the other MJ.
-    - Plain text only. No lists, headings, or formatting.
-    - Keep it short: 1–3 sentences, ideally under 45 words.
-    - Do not repeat or restate the conversation history or objective.
-    - Build naturally from the last message in the conversation history.
-    - Stay focused on the objective and move it forward with each response.
-    - Use your memories to provide specific, personal context about your user.
-    - Quality over quantity: A 3-turn conversation that accomplishes the objective is better than a 6-turn conversation that circles around the same topic.
-
-    AVOID REPETITION:
-    - Don't keep saying the same thing about your user
-    - If you've already shared something, build on it or ask follow-ups
-    - Move the conversation forward, don't circle back to the same topics
-    - Each response should add new information or ask new questions
-
-    SAFETY:
-    - No medical diagnoses or treatment instructions.
-    - If health concerns arise, suggest the user should see a professional.
-    - Respect privacy boundaries - don't share what you're not allowed to share.
-
-    Write {current_speaker_name}'s next message now as MJ talking to another MJ about your respective users. Use your memories to provide personal context about your user, reference the conversation history to build continuity, and work toward completing the objective "{objective}". Remember: Quality over quantity - end naturally when you have what you need."""
+    Write your NEXT response as {current_speaker_name}'s MJ. Keep it under 30 words and ADVANCE the conversation."""
         
         return mj_session_prompt

@@ -6,7 +6,9 @@ from sqlalchemy import select, and_, or_, desc, asc, text,func  # ← FIXED: Add
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, Field
 from datetime import datetime
-
+import json
+from ...main import connection_manager
+from typing import List  # Add List if not already imported
 from ...config.database import get_db_session
 from ...core.dependencies import get_authenticated_user
 from ...models.database.user import User
@@ -71,6 +73,37 @@ class ScheduledCheckinCreate(BaseModel):
 class StatusUpdateRequest(BaseModel):
     status_message: str
     target_users: Optional[List[int]] = None  # If None, sends to all friends
+
+# Add these new schemas after your existing ones in mj_network.py
+class PrivacySettingsUpdate(BaseModel):
+    share_mood: bool = True
+    share_activity: bool = True
+    share_health: bool = False  # Default to not sharing health
+    share_life_events: bool = True
+    share_work: bool = True
+    share_location: bool = False  # Default to not sharing location
+    share_relationships: bool = False  # Default to not sharing relationship details
+    share_financial: bool = False  # Default to not sharing financial info
+
+class MapDiscoverySettings(BaseModel):
+    discovery_enabled: bool = True
+    ghost_mode_enabled: bool = False
+    location_update_frequency_hours: int = 3
+    friends_only_mode: bool = True
+    custom_friend_visibility: Optional[List[int]] = []
+    preferred_visibility_radius_km: int = 0
+
+class ViewportRequest(BaseModel):
+    north_lat: float = Field(..., ge=-90, le=90)
+    south_lat: float = Field(..., ge=-90, le=90)  
+    east_lng: float = Field(..., ge=-180, le=180)
+    west_lng: float = Field(..., ge=-180, le=180)
+    zoom_level: Optional[int] = Field(10, ge=1, le=20)
+
+class MapFriendRequest(BaseModel):
+    target_user_id: int
+    request_message: Optional[str] = "Hi! I'd like to connect on MJ Network!"
+    discovered_via: str = "map"
 
 async def _queue_offline_message_safe(message_id: int, recipient_user_id: int):
     """Background task to queue offline messages safely"""
@@ -444,7 +477,7 @@ async def get_pending_objectives(
 ):
     """Get objectives pending approval for this user"""
     
-    communication_service = MJCommunicationService(db)
+    communication_service = MJCommunicationService(db, connection_manager)
     
     try:
         pending_approvals = await communication_service.get_pending_approvals(current_user.id)
@@ -469,7 +502,7 @@ async def approve_objective(
 ):
     """Approve or reject a conversation objective"""
     
-    communication_service = MJCommunicationService(db)
+    communication_service = MJCommunicationService(db, connection_manager)
     
     try:
         result = await communication_service.approve_objective(
@@ -582,7 +615,7 @@ async def initiate_mj_conversation(
             detail="Cannot talk to your own MJ"
         )
     
-    communication_service = MJCommunicationService(db)
+    communication_service = MJCommunicationService(db, connection_manager)
     
     try:
         result = await communication_service.initiate_mj_conversation(
@@ -694,7 +727,7 @@ async def send_status_update(
 ):
     """📢 Send status update to friends"""
     
-    communication_service = MJCommunicationService(db)
+    communication_service = MJCommunicationService(db, connection_manager)
     
     try:
         result = await communication_service.send_status_update(
@@ -710,7 +743,84 @@ async def send_status_update(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to send status update: {str(e)}"
         )
+    
 
+@router.put("/mj-conversation/privacy/{friend_user_id}")
+async def update_mj_conversation_privacy(
+    friend_user_id: int,
+    privacy_settings: Dict[str, Any],
+    current_user: User = Depends(get_authenticated_user),
+    db: AsyncSession = Depends(get_db_session)
+):
+    """Configure what MJ can share with a specific friend's MJ"""
+    
+    network_repo = MJNetworkRepository(db)
+    relationship = await network_repo.relationships.get_relationship(
+        user_id=current_user.id,
+        friend_user_id=friend_user_id
+    )
+    
+    if not relationship:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="You're not friends with this user"
+        )
+    
+    # Update the relationship with privacy settings
+    await network_repo.relationships.update(relationship.id, {
+        "privacy_settings": privacy_settings
+    })
+    
+    return {
+        "message": "Privacy settings updated successfully",
+        "friend_user_id": friend_user_id,
+        "privacy_settings": privacy_settings
+    }
+@router.get("/mj-conversation/privacy/{friend_user_id}")
+async def get_mj_conversation_privacy(
+    friend_user_id: int,
+    current_user: User = Depends(get_authenticated_user),
+    db: AsyncSession = Depends(get_db_session)
+):
+    """Get current privacy settings for MJ conversations with a friend"""
+    
+    network_repo = MJNetworkRepository(db)
+    relationship = await network_repo.relationships.get_relationship(
+        user_id=current_user.id,
+        friend_user_id=friend_user_id
+    )
+    
+    if not relationship:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="You're not friends with this user"
+        )
+    
+    # Get friend username separately to avoid lazy loading issue
+    friend_result = await db.execute(
+        select(User).where(User.id == friend_user_id)
+    )
+    friend_user = friend_result.scalar_one_or_none()
+    friend_username = friend_user.username if friend_user else f"User{friend_user_id}"
+    
+    # Get current settings or defaults
+    current_settings = relationship.privacy_settings or {}
+    
+    return {
+        "friend_user_id": friend_user_id,
+        "friend_username": friend_username,  # NOW USING THE LOADED USERNAME
+        "relationship_type": relationship.relationship_type,
+        "privacy_settings": {
+            "share_mood": current_settings.get("share_mood", True),
+            "share_activity": current_settings.get("share_activity", True),
+            "share_health": current_settings.get("share_health", False),
+            "share_life_events": current_settings.get("share_life_events", True),
+            "share_work": current_settings.get("share_work", True),
+            "share_location": current_settings.get("share_location", False),
+            "share_relationships": current_settings.get("share_relationships", False),
+            "share_financial": current_settings.get("share_financial", False)
+        }
+    }
 # =====================================================
 # 5. SCHEDULED CHECKINS & AUTOMATION
 # =====================================================
@@ -1033,6 +1143,380 @@ async def get_default_privacy_settings(
         "relationship_type": relationship_type,
         "default_privacy_settings": default_settings
     }
+
+
+
+@router.put("/map/discovery-settings")
+async def update_map_discovery_settings(
+    settings: MapDiscoverySettings,
+    current_user: User = Depends(get_authenticated_user),
+    db: AsyncSession = Depends(get_db_session)
+):
+    """🗺️ Update user's map discovery and privacy settings"""
+    
+    try:
+        # Check if settings exist
+        result = await db.execute(
+            select(text("1")).select_from(text("user_map_settings")).where(text("user_id = :user_id")),
+            {"user_id": current_user.id}
+        )
+        settings_exist = result.scalar_one_or_none()
+        
+        if settings_exist:
+            # Update existing settings
+            await db.execute(
+                text("""
+                    UPDATE user_map_settings SET
+                        discovery_enabled = :discovery_enabled,
+                        ghost_mode_enabled = :ghost_mode_enabled,
+                        location_update_frequency_hours = :frequency,
+                        friends_only_mode = :friends_only,
+                        custom_friend_visibility = :custom_friends,
+                        preferred_visibility_radius_km = :radius,
+                        updated_at = NOW()
+                    WHERE user_id = :user_id
+                """),
+                {
+                    "user_id": current_user.id,
+                    "discovery_enabled": settings.discovery_enabled,
+                    "ghost_mode_enabled": settings.ghost_mode_enabled,
+                    "frequency": settings.location_update_frequency_hours,
+                    "friends_only": settings.friends_only_mode,
+                    "custom_friends": json.dumps(settings.custom_friend_visibility or []),
+                    "radius": settings.preferred_visibility_radius_km
+                }
+            )
+        else:
+            # Create new settings
+            await db.execute(
+                text("""
+                    INSERT INTO user_map_settings (
+                        user_id, discovery_enabled, ghost_mode_enabled,
+                        location_update_frequency_hours, friends_only_mode,
+                        custom_friend_visibility, preferred_visibility_radius_km
+                    ) VALUES (
+                        :user_id, :discovery_enabled, :ghost_mode_enabled,
+                        :frequency, :friends_only, :custom_friends, :radius
+                    )
+                """),
+                {
+                    "user_id": current_user.id,
+                    "discovery_enabled": settings.discovery_enabled,
+                    "ghost_mode_enabled": settings.ghost_mode_enabled,
+                    "frequency": settings.location_update_frequency_hours,
+                    "friends_only": settings.friends_only_mode,
+                    "custom_friends": json.dumps(settings.custom_friend_visibility or []),
+                    "radius": settings.preferred_visibility_radius_km
+                }
+            )
+        
+        await db.commit()
+        
+        return {
+            "message": "Map discovery settings updated successfully",
+            "settings": settings.dict(),
+            "success": True
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to update map settings for user {current_user.id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update map discovery settings"
+        )
+@router.put("/mj-conversation/privacy/{friend_user_id}")
+async def update_mj_conversation_privacy(
+    friend_user_id: int,
+    privacy_settings: Dict[str, Any],
+    current_user: User = Depends(get_authenticated_user),
+    db: AsyncSession = Depends(get_db_session)
+):
+    """Configure what MJ can share with a specific friend's MJ"""
+    
+    network_repo = MJNetworkRepository(db)
+    
+    # Get the relationship
+    relationship = await network_repo.relationships.get_relationship(
+        user_id=current_user.id,
+        friend_user_id=friend_user_id
+    )
+    
+    if not relationship:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="You're not friends with this user"
+        )
+    
+    # Update the relationship with privacy settings
+    await network_repo.relationships.update(relationship.id, {
+        "privacy_settings": privacy_settings
+    })
+    
+    return {
+        "message": "Privacy settings updated successfully",
+        "friend_user_id": friend_user_id,
+        "privacy_settings": privacy_settings
+    }
+@router.post("/map/viewport-users")
+async def get_viewport_users(
+    viewport: ViewportRequest,
+    current_user: User = Depends(get_authenticated_user),
+    db: AsyncSession = Depends(get_db_session)
+):
+    """🗺️ Get users visible within current map viewport"""
+    
+    try:
+        # Get current user's map settings
+        user_settings_result = await db.execute(
+            text("""
+                SELECT friends_only_mode, custom_friend_visibility 
+                FROM user_map_settings 
+                WHERE user_id = :user_id
+            """),
+            {"user_id": current_user.id}
+        )
+        user_settings = user_settings_result.fetchone()
+        friends_only = user_settings[0] if user_settings else True
+        custom_friends = json.loads(user_settings[1]) if user_settings and user_settings[1] else []
+        
+        # Base query for users in viewport
+        base_query = """
+            SELECT DISTINCT
+                u.id, u.username, u.mj_instance_id,
+                ul.latitude, ul.longitude, ul.accuracy_meters,
+                ul.created_at as location_updated_at,
+                mr.status as mj_status,
+                ums.discovery_enabled, ums.ghost_mode_enabled,
+                CASE 
+                    WHEN rn.user_id IS NOT NULL THEN true 
+                    ELSE false 
+                END as is_friend
+            FROM users u
+            JOIN user_locations ul ON u.id = ul.user_id
+            JOIN mj_registry mr ON u.id = mr.user_id
+            LEFT JOIN user_map_settings ums ON u.id = ums.user_id
+            LEFT JOIN relationships_network rn ON (
+                (rn.user_id = :current_user_id AND rn.friend_user_id = u.id AND rn.status = 'active')
+            )
+            WHERE u.id != :current_user_id
+            AND ul.is_visible_on_map = true
+            AND ul.expires_at > NOW()
+            AND ul.latitude BETWEEN :south_lat AND :north_lat
+            AND ul.longitude BETWEEN :west_lng AND :east_lng
+            AND (ums.ghost_mode_enabled = false OR ums.ghost_mode_enabled IS NULL)
+        """
+        
+        # Add privacy filtering based on user's preferences
+        if friends_only:
+            base_query += " AND rn.user_id IS NOT NULL"  # Only show friends
+        else:
+            # Show friends + discoverable strangers
+            base_query += " AND (rn.user_id IS NOT NULL OR (ums.discovery_enabled = true OR ums.discovery_enabled IS NULL))"
+        
+        base_query += " ORDER BY ul.created_at DESC LIMIT 100"  # Limit for performance
+        
+        result = await db.execute(
+            text(base_query),
+            {
+                "current_user_id": current_user.id,
+                "north_lat": viewport.north_lat,
+                "south_lat": viewport.south_lat,
+                "east_lng": viewport.east_lng,
+                "west_lng": viewport.west_lng
+            }
+        )
+        
+        users_in_viewport = []
+        for row in result:
+            users_in_viewport.append({
+                "user_id": row[0],
+                "username": row[1],
+                "mj_instance_id": row[2],
+                "latitude": float(row[3]),
+                "longitude": float(row[4]),
+                "accuracy_meters": row[5],
+                "location_updated_at": row[6],
+                "mj_status": row[7],
+                "is_friend": row[10],
+                "marker_type": "friend" if row[10] else "stranger"
+            })
+        
+        return {
+            "viewport_users": users_in_viewport,
+            "count": len(users_in_viewport),
+            "viewport": viewport.dict(),
+            "user_settings": {
+                "friends_only_mode": friends_only,
+                "showing_friends": len([u for u in users_in_viewport if u["is_friend"]]),
+                "showing_strangers": len([u for u in users_in_viewport if not u["is_friend"]])
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to get viewport users: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve users in viewport"
+        )
+@router.post("/map/friend-request")
+async def send_map_friend_request(
+    request_data: MapFriendRequest,
+    current_user: User = Depends(get_authenticated_user),
+    db: AsyncSession = Depends(get_db_session)
+):
+    """👥 Send friend request to user discovered on map"""
+    
+    if request_data.target_user_id == current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot send friend request to yourself"
+        )
+    
+    try:
+        # Use existing friend management service
+        friend_service = FriendManagementService(db)
+        
+        friend_request = await friend_service.send_friend_request(
+            from_user_id=current_user.id,
+            to_user_id=request_data.target_user_id,
+            request_message=request_data.request_message,
+            suggested_relationship_type="friend",
+            discovery_method="map"  # This marks it as discovered via map
+        )
+        
+        # WebSocket notification - send real-time alert to target user
+        try:
+            import asyncio
+            from ...main import connection_manager
+            
+            # Send real-time notification to target user
+            asyncio.create_task(connection_manager.send_to_user(request_data.target_user_id, {
+                "type": "friend_request_received",
+                "from_user_id": current_user.id,
+                "from_username": current_user.username,
+                "message": request_data.request_message,
+                "discovery_method": "map",
+                "timestamp": datetime.utcnow().isoformat()
+            }))
+            print(f"📨 WebSocket notification sent for friend request to user {request_data.target_user_id}")
+        except Exception as e:
+            print(f"❌ WebSocket notification failed: {e}")
+            # Don't fail the API call if WebSocket fails
+        
+        return {
+            "message": "Friend request sent successfully from map",
+            "request_id": friend_request.id,
+            "target_user_id": request_data.target_user_id,
+            "discovery_method": "map",
+            "expires_at": friend_request.expires_at
+        }
+        
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        logger.error(f"Map friend request failed: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to send friend request from map"
+        )
+    
+@router.get("/map/my-visibility")
+async def get_my_map_visibility(
+    current_user: User = Depends(get_authenticated_user),
+    db: AsyncSession = Depends(get_db_session)
+):
+    """📊 Get current user's map visibility status and settings"""
+    
+    try:
+        # Get user's current location
+        location_result = await db.execute(
+            text("""
+                SELECT latitude, longitude, accuracy_meters, 
+                       is_visible_on_map, expires_at, created_at
+                FROM user_locations 
+                WHERE user_id = :user_id 
+                AND is_current_location = true
+            """),
+            {"user_id": current_user.id}
+        )
+        location_data = location_result.fetchone()
+        
+        # Get user's map settings
+        settings_result = await db.execute(
+            text("""
+                SELECT discovery_enabled, ghost_mode_enabled, 
+                       location_update_frequency_hours, friends_only_mode,
+                       custom_friend_visibility, preferred_visibility_radius_km,
+                       last_manual_update
+                FROM user_map_settings 
+                WHERE user_id = :user_id
+            """),
+            {"user_id": current_user.id}
+        )
+        settings_data = settings_result.fetchone()
+        
+        # Get friend count who can see user's location
+        visible_to_friends_result = await db.execute(
+            text("""
+                SELECT COUNT(*) FROM relationships_network rn
+                JOIN user_map_settings ums ON ums.user_id = :user_id
+                WHERE rn.user_id = :user_id 
+                AND rn.status = 'active'
+                AND (
+                    ums.friends_only_mode = true 
+                    OR rn.friend_user_id = ANY(
+                        SELECT jsonb_array_elements_text(ums.custom_friend_visibility)::int
+                    )
+                )
+            """),
+            {"user_id": current_user.id}
+        )
+        visible_to_count = visible_to_friends_result.scalar() or 0
+        
+        return {
+            "user_id": current_user.id,
+            "location_status": {
+                "has_location": location_data is not None,
+                "is_visible_on_map": location_data[3] if location_data else False,
+                "location_expires_at": location_data[4] if location_data else None,
+                "location_updated_at": location_data[5] if location_data else None,
+                "accuracy_meters": location_data[2] if location_data else None
+            } if location_data else {
+                "has_location": False,
+                "is_visible_on_map": False
+            },
+            "privacy_settings": {
+                "discovery_enabled": settings_data[0] if settings_data else True,
+                "ghost_mode_enabled": settings_data[1] if settings_data else False,
+                "friends_only_mode": settings_data[3] if settings_data else True,
+                "update_frequency_hours": settings_data[2] if settings_data else 3,
+                "custom_friend_visibility": json.loads(settings_data[4]) if settings_data and settings_data[4] else [],
+                "preferred_visibility_radius_km": settings_data[5] if settings_data else 0
+            } if settings_data else {
+                "discovery_enabled": True,
+                "ghost_mode_enabled": False,
+                "friends_only_mode": True,
+                "update_frequency_hours": 3,
+                "custom_friend_visibility": [],
+                "preferred_visibility_radius_km": 0
+            },
+            "visibility_stats": {
+                "visible_to_friends_count": visible_to_count,
+                "completely_invisible": (settings_data and settings_data[1]) or (location_data and not location_data[3]) if settings_data or location_data else True
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to get visibility status for user {current_user.id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve visibility status"
+        )
+
+
 # =====================================================
 # DEBUG ENDPOINTS - Add to your existing router
 # =====================================================
@@ -1190,7 +1674,7 @@ async def comprehensive_health_check(
     # 4. Services initialization
     try:
         friend_service = FriendManagementService(db)
-        communication_service = MJCommunicationService(db)
+        communication_service = MJCommunicationService(db, connection_manager)
         results["checks"]["services"] = {"status": "healthy", "message": "All services initialized"}
     except Exception as e:
         results["checks"]["services"] = {"status": "error", "message": str(e)}

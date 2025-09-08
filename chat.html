@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>MJ Network - Auto-Chat System</title>
     <style>
+        
         * {
             margin: 0;
             padding: 0;
@@ -529,6 +530,144 @@
             margin-bottom: 40px;
         }
 
+        /* Map Styles */
+        .map-container {
+            height: 500px;
+            width: 100%;
+            border-radius: 12px;
+            overflow: hidden;
+            border: 1px solid #333;
+        }
+
+        .map-controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+            flex-wrap: wrap;
+        }
+
+        .map-status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            color: #888;
+        }
+
+        .location-accuracy {
+            background: rgba(0, 255, 136, 0.1);
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+        }
+
+        .map-legend {
+            display: flex;
+            gap: 15px;
+            margin-top: 10px;
+            font-size: 12px;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .legend-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+        }
+
+        .legend-dot.you { background: #0088ff; }
+        .legend-dot.friend { background: #00ff88; }
+        .legend-dot.stranger { background: #ff6b6b; }
+
+        /* Enhanced Privacy Styles */
+        .privacy-section {
+            border: 1px solid #444;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            background: rgba(0, 255, 136, 0.05);
+            transition: all 0.3s ease;
+        }
+
+        .privacy-section:hover {
+            border-color: #00ff88;
+            background: rgba(0, 255, 136, 0.08);
+        }
+
+        .privacy-toggle {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            padding: 10px;
+            border-radius: 5px;
+            transition: background 0.2s ease;
+        }
+
+        .privacy-toggle:hover {
+            background: rgba(255, 255, 255, 0.03);
+        }
+
+        .toggle-switch {
+            position: relative;
+            width: 50px;
+            height: 25px;
+            background: #333;
+            border-radius: 15px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            border: 2px solid transparent;
+        }
+
+        .toggle-switch.active {
+            background: #00ff88;
+            border-color: #00cc6a;
+        }
+
+        .toggle-switch::after {
+            content: '';
+            position: absolute;
+            top: 2px;
+            left: 2px;
+            width: 19px;
+            height: 19px;
+            background: white;
+            border-radius: 50%;
+            transition: all 0.3s ease;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+        }
+
+        .toggle-switch.active::after {
+            transform: translateX(25px);
+        }
+
+        #custom-privacy-text {
+            font-family: 'Courier New', monospace;
+            line-height: 1.4;
+            background: #1a1a1a;
+            border-color: #ffaa00;
+        }
+
+        #custom-privacy-text:focus {
+            border-color: #ffaa00;
+            box-shadow: 0 0 10px rgba(255, 170, 0, 0.3);
+        }
+
+        .privacy-conflict {
+            border-left: 4px solid #ffaa00;
+            background: rgba(255, 170, 0, 0.1);
+        }
+
+        .privacy-override {
+            border-left: 4px solid #ff4444;
+            background: rgba(255, 68, 68, 0.1);
+        }
+
         /* Responsive */
         @media (max-width: 768px) {
             .container {
@@ -545,7 +684,6 @@
             }
         }
 
-        /* Transitions */
         .btn:disabled {
             opacity: 0.6;
             cursor: not-allowed;
@@ -556,6 +694,8 @@
             color: #666;
         }
     </style>
+     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 </head>
 <body>
     <!-- Login Screen -->
@@ -601,7 +741,7 @@
             <button class="nav-tab" onclick="showSection('pending-approvals')">Pending Approvals</button>
             <button class="nav-tab" onclick="showSection('active-sessions')">Active Sessions</button>
             <button class="nav-tab" onclick="showSection('conversations')">MJ Talks</button>
-            <button class="nav-tab" onclick="showSection('discovery')">Discovery</button>
+            <button class="nav-tab" onclick="showSection('world-map')">World Map</button>
             <button class="nav-tab" onclick="showSection('settings')">Settings</button>
         </div>
 
@@ -742,7 +882,7 @@
             </div>
         </div>
 
-        <!-- Pending Approvals Section (NEW) -->
+        <!-- Pending Approvals Section -->
         <div id="pending-approvals" class="section">
             <div class="card">
                 <div class="card-header">
@@ -761,7 +901,7 @@
             </div>
         </div>
 
-        <!-- Active Sessions Section (NEW) -->
+        <!-- Active Sessions Section -->
         <div id="active-sessions" class="section">
             <div class="card">
                 <div class="card-header">
@@ -791,6 +931,58 @@
                     <div class="loading">
                         <div class="spinner"></div>
                         Loading conversations...
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- World Map Section -->
+        <div id="world-map" class="section">
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">World Map - Find MJ Users</h3>
+                    <div style="display: flex; gap: 10px; align-items: center;">
+                        <div class="map-status" id="location-status">
+                            <span id="location-text">Getting location...</span>
+                        </div>
+                        <button class="btn btn-secondary btn-small" onclick="refreshMapLocation()">📍 Update Location</button>
+                        <button class="btn btn-secondary btn-small" onclick="toggleMapPrivacy()">👻 Privacy</button>
+                    </div>
+                </div>
+                
+                <div class="map-controls">
+                    <button class="btn btn-primary btn-small" onclick="centerMapOnUser()">Center on Me</button>
+                    <button class="btn btn-secondary btn-small" onclick="toggleFriendsOnly()" id="friends-toggle">
+                        👥 Friends Only
+                    </button>
+                    <button class="btn btn-secondary btn-small" onclick="refreshMapUsers()">🔄 Refresh Users</button>
+                </div>
+                
+                <div class="map-container" id="world-map-container"></div>
+                
+                <div class="map-legend">
+                    <div class="legend-item">
+                        <div class="legend-dot you"></div>
+                        <span>You</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-dot friend"></div>
+                        <span>Friends</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-dot stranger"></div>
+                        <span>Discoverable Users</span>
+                    </div>
+                </div>
+                
+                <div id="map-stats" class="stats-grid" style="margin-top: 15px;">
+                    <div class="stat-card">
+                        <div class="stat-value" id="users-visible-count">0</div>
+                        <div class="stat-label">Users Visible</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="friends-nearby-count">0</div>
+                        <div class="stat-label">Friends Nearby</div>
                     </div>
                 </div>
             </div>
@@ -852,6 +1044,48 @@
                 </div>
                 
                 <button class="btn btn-primary" onclick="saveSettings()">Save Settings</button>
+
+                <!-- Map Privacy Settings -->
+                <div class="privacy-section">
+                    <h4 style="color: #00ff88; margin-bottom: 15px;">🗺️ World Map Privacy</h4>
+                    
+                    <div class="privacy-toggle">
+                        <div>
+                            <strong>Location Discovery</strong>
+                            <div style="font-size: 12px; color: #888;">Allow others to find you on the world map</div>
+                        </div>
+                        <div class="toggle-switch" id="discovery-toggle" onclick="toggleDiscovery()"></div>
+                    </div>
+                    
+                    <div class="privacy-toggle">
+                        <div>
+                            <strong>Ghost Mode</strong>
+                            <div style="font-size: 12px; color: #888;">Completely invisible on map</div>
+                        </div>
+                        <div class="toggle-switch" id="ghost-toggle" onclick="toggleGhostMode()"></div>
+                    </div>
+                    
+                    <div class="privacy-toggle">
+                        <div>
+                            <strong>Friends Only</strong>
+                            <div style="font-size: 12px; color: #888;">Only show your location to friends</div>
+                        </div>
+                        <div class="toggle-switch active" id="friends-only-toggle" onclick="toggleFriendsOnly()"></div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="form-label">Location Update Frequency</label>
+                        <select class="form-input" id="location-frequency">
+                            <option value="1">Every hour</option>
+                            <option value="3" selected>Every 3 hours</option>
+                            <option value="6">Every 6 hours</option>
+                            <option value="12">Every 12 hours</option>
+                            <option value="24">Daily</option>
+                        </select>
+                    </div>
+                    
+                    <button class="btn btn-primary" onclick="saveMapPrivacySettings()">Save Map Privacy Settings</button>
+                </div>
             </div>
         </div>
     </div>
@@ -932,7 +1166,6 @@
                          placeholder="Describe what you want the MJs to talk about..."></textarea>
             </div>
 
-            
             <div style="display: flex; gap: 15px; justify-content: flex-end;">
                 <button class="btn btn-secondary" onclick="closeMJTalkModal()">Cancel</button>
                 <button class="btn btn-primary" onclick="initiateMJTalk()">Create Auto-Chat Session</button>
@@ -940,7 +1173,7 @@
         </div>
     </div>
 
-    <!-- Objective Approval Modal (NEW) -->
+    <!-- Objective Approval Modal -->
     <div id="objective-approval-modal" class="modal">
         <div class="modal-content" style="max-width: 600px;">
             <div class="modal-header">
@@ -972,6 +1205,139 @@
         </div>
     </div>
 
+    <!-- Enhanced Privacy Settings Modal -->
+    <div id="privacy-settings-modal" class="modal">
+        <div class="modal-content" style="max-width: 800px; max-height: 90vh; overflow-y: auto;">
+            <div class="modal-header">
+                <h3>MJ Conversation Privacy Settings - <span id="privacy-friend-name">Friend</span></h3>
+                <button class="modal-close" onclick="closePrivacyModal()">&times;</button>
+            </div>
+            
+            <div class="alert alert-info" style="margin-bottom: 20px;">
+                Configure what your MJ can share about you when talking to this friend's MJ
+            </div>
+            
+            <!-- Custom Privacy Text - MOVED TO TOP for prominence -->
+            <div class="privacy-section" style="border-color: #ffaa00; background: rgba(255, 170, 0, 0.1);">
+                <h4 style="color: #ffaa00; margin-bottom: 15px;">🎯 Custom Privacy Rules (Highest Priority)</h4>
+                
+                <div class="form-group">
+                    <label class="form-label">Specific Restrictions</label>
+                    <textarea class="form-input form-textarea" id="custom-privacy-text" 
+                            placeholder="Examples:
+• Don't share details about Sarah or my past relationships
+• Keep my therapy sessions private
+• Never mention my financial problems
+• Don't discuss my family issues with mom
+
+Be specific about people, topics, or situations you want to keep private."
+                            style="height: 120px; font-family: monospace;"></textarea>
+                    <div style="font-size: 12px; color: #888; margin-top: 5px;">
+                        ⚠️ These rules override the category settings below. Be specific about names, topics, or situations.
+                    </div>
+                </div>
+                
+                <!-- Custom Text Preview -->
+                <div id="custom-privacy-preview" style="display: none; margin-top: 10px; padding: 10px; background: rgba(0,0,0,0.3); border-radius: 5px; font-size: 12px; color: #ccc;">
+                    <strong>MJ will be instructed:</strong>
+                    <div id="custom-privacy-preview-text"></div>
+                </div>
+            </div>
+            
+            <div class="privacy-section">
+                <h4 style="color: #00ff88; margin-bottom: 15px;">🔒 Category Settings</h4>
+                <div style="font-size: 13px; color: #888; margin-bottom: 15px;">
+                    Custom rules above will override these categories when conflicts exist
+                </div>
+                
+                <div class="privacy-toggle">
+                    <div>
+                        <strong>Mood & Emotions</strong>
+                        <div style="font-size: 12px; color: #888;">Share how you're feeling emotionally</div>
+                    </div>
+                    <div class="toggle-switch active" id="share-mood" onclick="togglePrivacy('mood')"></div>
+                </div>
+                
+                <div class="privacy-toggle">
+                    <div>
+                        <strong>Work & Professional</strong>
+                        <div style="font-size: 12px; color: #888;">Share work stress, job details, career info</div>
+                    </div>
+                    <div class="toggle-switch active" id="share-work" onclick="togglePrivacy('work')"></div>
+                </div>
+                
+                <div class="privacy-toggle">
+                    <div>
+                        <strong>Health & Medical</strong>
+                        <div style="font-size: 12px; color: #888;">Share health issues, medical conditions</div>
+                    </div>
+                    <div class="toggle-switch" id="share-health" onclick="togglePrivacy('health')"></div>
+                </div>
+                
+                <div class="privacy-toggle">
+                    <div>
+                        <strong>Daily Activities</strong>
+                        <div style="font-size: 12px; color: #888;">Share what you did today, hobbies</div>
+                    </div>
+                    <div class="toggle-switch active" id="share-activity" onclick="togglePrivacy('activity')"></div>
+                </div>
+                
+                <div class="privacy-toggle">
+                    <div>
+                        <strong>Relationships</strong>
+                        <div style="font-size: 12px; color: #888;">Share about exes, dating, relationships</div>
+                        <div id="relationship-warning" style="display: none; font-size: 11px; color: #ffaa00; margin-top: 3px;">
+                            ⚠️ Custom rules may restrict specific people
+                        </div>
+                    </div>
+                    <div class="toggle-switch" id="share-relationships" onclick="togglePrivacy('relationships')"></div>
+                </div>
+                
+                <div class="privacy-toggle">
+                    <div>
+                        <strong>Location & Travel</strong>
+                        <div style="font-size: 12px; color: #888;">Share where you are, trips</div>
+                    </div>
+                    <div class="toggle-switch" id="share-location" onclick="togglePrivacy('location')"></div>
+                </div>
+                
+                <div class="privacy-toggle">
+                    <div>
+                        <strong>Life Events</strong>
+                        <div style="font-size: 12px; color: #888;">Share milestones, achievements, major events</div>
+                    </div>
+                    <div class="toggle-switch active" id="share-life-events" onclick="togglePrivacy('life_events')"></div>
+                </div>
+                
+                <div class="privacy-toggle">
+                    <div>
+                        <strong>Financial</strong>
+                        <div style="font-size: 12px; color: #888;">Share money troubles, salary, financial info</div>
+                    </div>
+                    <div class="toggle-switch" id="share-financial" onclick="togglePrivacy('financial')"></div>
+                </div>
+            </div>
+            
+            <!-- Privacy Impact Summary -->
+            <div class="privacy-section" style="background: rgba(0, 100, 200, 0.1); border-color: #4488ff;">
+                <h4 style="color: #4488ff; margin-bottom: 15px;">📋 Privacy Summary</h4>
+                <div id="privacy-impact-summary">
+                    <div style="font-size: 13px; color: #ccc;">
+                        Your MJ will follow these rules when talking to <span id="summary-friend-name">this friend</span>'s MJ.
+                    </div>
+                </div>
+            </div>
+            
+            <div style="display: flex; gap: 15px; justify-content: flex-end; margin-top: 20px;">
+                <button class="btn btn-secondary" onclick="testPrivacySettings()">🧪 Test Settings</button>
+                <button class="btn btn-secondary" onclick="closePrivacyModal()">Cancel</button>
+                <button class="btn btn-primary" onclick="savePrivacySettings()" id="save-privacy-btn">
+                    Save Privacy Settings
+                </button>
+            </div>
+        </div>
+    </div>
+
     <script>
         // Global state
         let authToken = localStorage.getItem('authToken');
@@ -983,6 +1349,32 @@
         let currentApprovalData = null;
         const API_BASE = 'http://localhost:8000';
 
+        // Privacy settings management
+        let currentPrivacyFriend = null;
+        let privacySettings = {
+            share_mood: true,
+            share_work: true,
+            share_health: false,
+            share_activity: true,
+            share_relationships: false,
+            share_location: false,
+            share_life_events: true,
+            share_financial: false
+        };
+
+        // Map variables
+        let worldMap = null;
+        let userMarker = null;
+        let mapUserMarkers = [];
+        let currentMapBounds = null;
+        let userLocation = null;
+        let mapSettings = {
+            discovery_enabled: true,
+            ghost_mode_enabled: false,
+            friends_only_mode: true,
+            location_update_frequency_hours: 3
+        };
+
         // Initialize app
         document.addEventListener('DOMContentLoaded', function() {
             if (!authToken) {
@@ -991,6 +1383,29 @@
             }
             
             initializeApp();
+
+            // Add event listeners for privacy settings
+            const customTextArea = document.getElementById('custom-privacy-text');
+            if (customTextArea) {
+                customTextArea.addEventListener('input', updateCustomPrivacyPreview);
+                customTextArea.addEventListener('paste', () => {
+                    setTimeout(updateCustomPrivacyPreview, 10);
+                });
+            }
+
+            // Handle purpose dropdown change
+            const purposeSelect = document.getElementById('mj-talk-purpose');
+            const customGroup = document.getElementById('custom-purpose-group');
+            
+            if (purposeSelect) {
+                purposeSelect.addEventListener('change', function() {
+                    if (this.value === 'Custom objective') {
+                        customGroup.style.display = 'block';
+                    } else {
+                        customGroup.style.display = 'none';
+                    }
+                });
+            }
         });
 
         // Authentication
@@ -1276,6 +1691,13 @@
             // Add active class to clicked tab
             event.target.classList.add('active');
             
+            // Initialize map when World Map tab is clicked
+            if (sectionId === 'world-map') {
+                setTimeout(() => {
+                    initializeWorldMap();
+                }, 100);
+            }
+            
             // Load section-specific data
             switch(sectionId) {
                 case 'friends':
@@ -1299,7 +1721,7 @@
             }
         }
 
-        // NEW: Load pending objective approvals
+        // Load pending objective approvals
         async function loadPendingApprovals() {
             const approvalsList = document.getElementById('pending-approvals-list');
             const approvalsCount = document.getElementById('pending-approvals-count');
@@ -1352,7 +1774,7 @@
             }
         }
 
-        // NEW: Load active auto-chat sessions
+        // Load active auto-chat sessions
         async function loadActiveSessions() {
             const sessionsList = document.getElementById('active-sessions-list');
             const sessionsCount = document.getElementById('active-sessions-count');
@@ -1406,7 +1828,7 @@
             }
         }
 
-        // NEW: Review objective for approval
+        // Review objective for approval
         async function reviewObjective(conversationId) {
             try {
                 const approvalsData = await apiRequest('/api/v1/mj-network/objectives/pending');
@@ -1541,7 +1963,6 @@
             }
             
             try {
-                // Note: You'll need to implement this endpoint
                 await apiRequest(`/api/v1/mj-network/sessions/${conversationId}/end`, {
                     method: 'POST'
                 });
@@ -1598,16 +2019,62 @@
                     window.mjWebSocket.onmessage = (event) => {
                         try {
                             const data = JSON.parse(event.data);
-                            loadingDiv.remove();
                             
-                            const mjResponseDiv = document.createElement('div');
-                            mjResponseDiv.className = 'message received';
-                            mjResponseDiv.innerHTML = `<strong>MJ:</strong> ${data.content || 'Sorry, I had trouble processing that message.'}`;
-                            messagesContainer.appendChild(mjResponseDiv);
-                            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+                            // Handle MJ chat responses
+                            if (data.type === "mj_response" || !data.type) {
+                                loadingDiv.remove();
+                                
+                                const mjResponseDiv = document.createElement('div');
+                                mjResponseDiv.className = 'message received';
+                                mjResponseDiv.innerHTML = `<strong>MJ:</strong> ${data.content || 'Sorry, I had trouble processing that message.'}`;
+                                messagesContainer.appendChild(mjResponseDiv);
+                                messagesContainer.scrollTop = messagesContainer.scrollHeight;
+                                return;
+                            }
+                            
+                            // Handle real-time map updates
+                            switch(data.type) {
+                                case 'friend_location_update':
+                                    console.log('📍 Friend location update received:', data);
+                                    if (worldMap && typeof updateFriendLocationOnMap === 'function') {
+                                        updateFriendLocationOnMap(data);
+                                    }
+                                    break;
+                                    
+                                case 'friend_online':
+                                    console.log('✅ Friend came online:', data);
+                                    if (worldMap && typeof updateFriendMarkerStatus === 'function') {
+                                        updateFriendMarkerStatus(data.user_id, 'online');
+                                    }
+                                    showAlert(`${data.username} came online`, 'info');
+                                    break;
+                                    
+                                case 'friend_offline':
+                                    console.log('❌ Friend went offline:', data);
+                                    if (worldMap && typeof updateFriendMarkerStatus === 'function') {
+                                        updateFriendMarkerStatus(data.user_id, 'offline');
+                                    }
+                                    break;
+                                    
+                                case 'friend_request_received':
+                                    console.log('👥 Friend request received:', data);
+                                    showAlert(`New friend request from ${data.from_username}!`, 'success');
+                                    
+                                    if (document.getElementById('requests').classList.contains('active')) {
+                                        loadRequests();
+                                    }
+                                    loadDashboardData();
+                                    break;
+                                    
+                                default:
+                                    console.log('Unknown WebSocket message type:', data.type);
+                            }
+                            
                         } catch (e) {
                             console.error('WebSocket message error:', e);
-                            loadingDiv.innerHTML = '<strong>MJ:</strong> <em>Sorry, I had trouble understanding the response.</em>';
+                            if (typeof loadingDiv !== 'undefined' && loadingDiv) {
+                                loadingDiv.innerHTML = '<strong>MJ:</strong> <em>Sorry, I had trouble understanding the response.</em>';
+                            }
                         }
                     };
                 } else {
@@ -1673,7 +2140,9 @@
                                 <button class="btn btn-primary btn-small" onclick="startMJTalk(${friend.friend_user_id}, '${friend.friend_username}')">
                                     MJ Talk
                                 </button>
-                                <button class="btn btn-secondary btn-small">View</button>
+                                <button class="btn btn-secondary btn-small" onclick="openPrivacySettings(${friend.friend_user_id}, '${friend.friend_username}')">
+                                    🔒 Privacy
+                                </button>
                             </div>
                         </div>
                     `).join('');
@@ -1940,27 +2409,10 @@
             }
         }
 
-        // Handle purpose dropdown change
-        document.addEventListener('DOMContentLoaded', function() {
-            const purposeSelect = document.getElementById('mj-talk-purpose');
-            const customGroup = document.getElementById('custom-purpose-group');
-            
-            if (purposeSelect) {
-                purposeSelect.addEventListener('change', function() {
-                    if (this.value === 'Custom objective') {
-                        customGroup.style.display = 'block';
-                    } else {
-                        customGroup.style.display = 'none';
-                    }
-                });
-            }
-        });
-
         async function initiateMJTalk() {
             const targetUserId = document.getElementById('mj-talk-target').value;
             const purpose = document.getElementById('mj-talk-purpose').value;
             const customPurpose = document.getElementById('custom-purpose').value;
-
 
             if (!targetUserId) {
                 showAlert('Please select a friend', 'error');
@@ -2035,6 +2487,290 @@
             } catch (error) {
                 console.error('Random MJ Talk failed:', error);
                 showAlert('Failed to start random auto-chat: ' + error.message, 'error');
+            }
+        }
+
+        // Enhanced Privacy Settings Management
+        async function openPrivacySettings(friendId, friendUsername) {
+            try {
+                console.log('🔒 Opening privacy settings for:', friendId, friendUsername);
+                
+                currentPrivacyFriend = { id: friendId, username: friendUsername };
+                
+                // Safely set friend name with null checks
+                const friendNameElement = document.getElementById('privacy-friend-name');
+                if (friendNameElement) {
+                    friendNameElement.textContent = friendUsername;
+                }
+                
+                const summaryFriendNameElement = document.getElementById('summary-friend-name');
+                if (summaryFriendNameElement) {
+                    summaryFriendNameElement.textContent = friendUsername;
+                }
+                
+                // Load existing privacy settings
+                try {
+                    const response = await apiRequest(`/api/v1/mj-network/mj-conversation/privacy/${friendId}`);
+                    
+                    if (response.privacy_settings) {
+                        privacySettings = response.privacy_settings;
+                        
+                        // Safely update toggles
+                        Object.keys(privacySettings).forEach(key => {
+                            const toggle = document.getElementById(`share-${key.replace('share_', '').replace('_', '-')}`);
+                            if (toggle) {
+                                if (privacySettings[key]) {
+                                    toggle.classList.add('active');
+                                } else {
+                                    toggle.classList.remove('active');
+                                }
+                            }
+                        });
+                        
+                        // Safely set custom text
+                        const customTextElement = document.getElementById('custom-privacy-text');
+                        if (customTextElement && response.privacy_settings.custom_privacy_text) {
+                            customTextElement.value = response.privacy_settings.custom_privacy_text;
+                        }
+                    }
+                } catch (error) {
+                    console.log('No existing privacy settings, using defaults');
+                }
+                
+                // Show modal
+                const modal = document.getElementById('privacy-settings-modal');
+                if (modal) {
+                    modal.classList.add('active');
+                    // Update preview after modal is shown
+                    setTimeout(updateCustomPrivacyPreview, 100);
+                } else {
+                    console.error('Privacy modal not found in DOM');
+                    showAlert('Privacy settings modal not available', 'error');
+                }
+                
+            } catch (error) {
+                console.error('Error opening privacy settings:', error);
+                showAlert('Failed to open privacy settings: ' + error.message, 'error');
+            }
+        }
+
+        function closePrivacyModal() {
+            document.getElementById('privacy-settings-modal').classList.remove('active');
+            currentPrivacyFriend = null;
+        }
+
+        function togglePrivacy(setting) {
+            const key = `share_${setting.replace('-', '_')}`;
+            privacySettings[key] = !privacySettings[key];
+            
+            const toggle = document.getElementById(`share-${setting}`);
+            if (privacySettings[key]) {
+                toggle.classList.add('active');
+            } else {
+                toggle.classList.remove('active');
+            }
+            
+            updatePrivacySummary();
+        }
+
+        // Enhanced privacy settings JavaScript
+        // Enhanced privacy settings JavaScript
+        function updateCustomPrivacyPreview() {
+            const customTextElement = document.getElementById('custom-privacy-text');
+            const previewDiv = document.getElementById('custom-privacy-preview');
+            const previewText = document.getElementById('custom-privacy-preview-text');
+            
+            // Exit early if elements don't exist
+            if (!customTextElement || !previewDiv || !previewText) {
+                console.warn('Privacy preview elements not found');
+                return;
+            }
+            
+            const customText = customTextElement.value.trim();
+            
+            if (customText) {
+                previewDiv.style.display = 'block';
+                
+                // Simple parsing preview
+                const restrictions = parsePrivacyRestrictions(customText);
+                
+                previewText.innerHTML = `
+                    <div>• "I can't share details about that"</div>
+                    <div>• "They haven't given me permission to discuss that specific topic"</div>
+                    ${restrictions.length > 0 ? `<div style="margin-top: 5px; color: #ffaa00;">Detected restrictions: ${restrictions.join(', ')}</div>` : ''}
+                `;
+                
+                // Show relationship warning if needed
+                const hasRelationshipRestrictions = customText.toLowerCase().includes('sarah') || 
+                                            customText.toLowerCase().includes('ex') ||
+                                            customText.toLowerCase().includes('relationship');
+                
+                const warningElement = document.getElementById('relationship-warning');
+                if (warningElement) {
+                    warningElement.style.display = hasRelationshipRestrictions ? 'block' : 'none';
+                }
+                
+            } else {
+                previewDiv.style.display = 'none';
+                const warningElement = document.getElementById('relationship-warning');
+                if (warningElement) {
+                    warningElement.style.display = 'none';
+                }
+            }
+            
+            updatePrivacySummary();
+        }
+
+        function parsePrivacyRestrictions(text) {
+            const restrictions = [];
+            const lower = text.toLowerCase();
+            
+            // Simple entity extraction
+            const entityPatterns = [
+                /don't (?:share|mention|discuss) (?:about )?(\w+)/g,
+                /keep (\w+) private/g,
+                /never mention (\w+)/g
+            ];
+            
+            entityPatterns.forEach(pattern => {
+                let match;
+                while ((match = pattern.exec(lower)) !== null) {
+                    if (match[1] && match[1].length > 2) {
+                        restrictions.push(match[1]);
+                    }
+                }
+            });
+            
+            return [...new Set(restrictions)]; // Remove duplicates
+        }
+
+        function updatePrivacySummary() {
+            const summary = document.getElementById('privacy-impact-summary');
+            if (!summary) return; // Exit if element doesn't exist
+            
+            const friendNameElement = document.getElementById('privacy-friend-name');
+            const friendName = friendNameElement ? friendNameElement.textContent : 'this friend';
+            
+            const customTextElement = document.getElementById('custom-privacy-text');
+            const customText = customTextElement ? customTextElement.value.trim() : '';
+            
+            // Check each toggle
+            const toggles = [
+                { id: 'share-mood', name: 'mood & emotions' },
+                { id: 'share-work', name: 'work & career' },
+                { id: 'share-health', name: 'health & medical' },
+                { id: 'share-activity', name: 'daily activities' },
+                { id: 'share-relationships', name: 'relationships' },
+                { id: 'share-location', name: 'location & travel' },
+                { id: 'share-life-events', name: 'life events' },
+                { id: 'share-financial', name: 'financial info' }
+            ];
+            
+            toggles.forEach(toggle => {
+                const element = document.getElementById(toggle.id);
+                if (element && element.classList.contains('active')) {
+                    allowedCategories.push(toggle.name);
+                } else {
+                    restrictedCategories.push(toggle.name);
+                }
+            });
+            
+            let summaryHTML = `
+                <div style="margin-bottom: 10px;">
+                    <strong style="color: #00ff88;">✓ Can share:</strong> 
+                    ${allowedCategories.length > 0 ? allowedCategories.join(', ') : 'general wellbeing only'}
+                </div>
+                <div style="margin-bottom: 10px;">
+                    <strong style="color: #ff6b6b;">✗ Cannot share:</strong> 
+                    ${restrictedCategories.length > 0 ? restrictedCategories.join(', ') : 'nothing restricted'}
+                </div>
+            `;
+            
+            if (customText) {
+                summaryHTML += `
+                    <div style="margin-bottom: 10px;">
+                        <strong style="color: #ffaa00;">⚠️ Custom restrictions:</strong> 
+                        Will override categories above for specific topics/people
+                    </div>
+                `;
+            }
+            
+            summary.innerHTML = summaryHTML;
+        }
+
+        function testPrivacySettings() {
+            const customText = document.getElementById('custom-privacy-text').value.trim();
+            
+            if (!customText) {
+                showAlert('Add some custom privacy rules to test', 'info');
+                return;
+            }
+            
+            // Simple test scenarios
+            const testQuestions = [
+                "How is their relationship with Sarah going?",
+                "What's their mood been like lately?", 
+                "Any updates on their work situation?",
+                "How are they feeling about their ex?"
+            ];
+            
+            let testResults = "🧪 <strong>Privacy Test Results:</strong><br><br>";
+            
+            testQuestions.forEach(question => {
+                const wouldBlock = checkIfQuestionBlocked(question, customText);
+                const status = wouldBlock ? '<span style="color: #ff6b6b;">BLOCKED</span>' : '<span style="color: #00ff88;">ALLOWED</span>';
+                testResults += `<strong>Q:</strong> ${question}<br><strong>Response:</strong> ${status}<br><br>`;
+            });
+            
+            showAlert(testResults, 'info');
+        }
+
+        function checkIfQuestionBlocked(question, customText) {
+            const lower = question.toLowerCase();
+            const customLower = customText.toLowerCase();
+            
+            // Check for entity mentions
+            if (customLower.includes('sarah') && lower.includes('sarah')) return true;
+            if (customLower.includes('ex') && lower.includes('ex')) return true;
+            if (customLower.includes('relationship') && lower.includes('relationship')) return true;
+            
+            return false;
+        }
+
+        async function savePrivacySettings() {
+            if (!currentPrivacyFriend) {
+                showAlert('No friend selected', 'error');
+                return;
+            }
+            
+            const saveBtn = document.getElementById('save-privacy-btn');
+            const originalText = saveBtn.textContent;
+            
+            try {
+                saveBtn.disabled = true;
+                saveBtn.textContent = 'Saving...';
+                
+                const customText = document.getElementById('custom-privacy-text').value.trim();
+                
+                const settingsData = {
+                    ...privacySettings,
+                    custom_privacy_text: customText || null
+                };
+                
+                await apiRequest(`/api/v1/mj-network/mj-conversation/privacy/${currentPrivacyFriend.id}`, {
+                    method: 'PUT',
+                    body: JSON.stringify(settingsData)
+                });
+                
+                showAlert(`Privacy settings saved for ${currentPrivacyFriend.username}!`, 'success');
+                closePrivacyModal();
+                
+            } catch (error) {
+                console.error('Failed to save privacy settings:', error);
+                showAlert('Failed to save privacy settings: ' + error.message, 'error');
+            } finally {
+                saveBtn.disabled = false;
+                saveBtn.textContent = originalText;
             }
         }
 
@@ -2150,6 +2886,430 @@
             }
         }
 
+        // World Map Functionality
+        function initializeWorldMap() {
+            if (worldMap) return; // Already initialized
+            
+            console.log('🗺️ Initializing world map...');
+            
+            // Create map centered on a default location
+            worldMap = L.map('world-map-container').setView([40.7128, -74.0060], 10);
+            
+            // Add tile layer
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap contributors',
+                maxZoom: 18
+            }).addTo(worldMap);
+            
+            // Handle map movement
+            worldMap.on('moveend zoomend', function() {
+                updateMapViewport();
+            });
+            
+            // Get user's location and center map
+            getUserLocationForMap();
+            
+            console.log('✅ World map initialized');
+        }
+
+        async function getUserLocationForMap() {
+            document.getElementById('location-text').textContent = 'Getting your location...';
+            
+            if (!navigator.geolocation) {
+                document.getElementById('location-text').textContent = 'Geolocation not supported';
+                return;
+            }
+            
+            navigator.geolocation.getCurrentPosition(
+                async (position) => {
+                    userLocation = {
+                        lat: position.coords.latitude,
+                        lng: position.coords.longitude,
+                        accuracy: position.coords.accuracy
+                    };
+                    
+                    console.log('📍 User location:', userLocation);
+                    
+                    // Update location on server
+                    await updateServerLocation(userLocation);
+                    
+                    // Center map on user
+                    worldMap.setView([userLocation.lat, userLocation.lng], 12);
+                    
+                    // Add user marker
+                    addUserMarker();
+                    
+                    // Update status
+                    document.getElementById('location-text').textContent = 
+                        `Located (±${Math.round(userLocation.accuracy)}m)`;
+                    
+                    // Load nearby users
+                    updateMapViewport();
+                },
+                (error) => {
+                    console.error('Geolocation error:', error);
+                    document.getElementById('location-text').textContent = 'Location access denied';
+                    // Still load the map with default view
+                    updateMapViewport();
+                },
+                {
+                    enableHighAccuracy: true,
+                    timeout: 10000,
+                    maximumAge: 300000 // 5 minutes
+                }
+            );
+        }
+
+        async function updateServerLocation(location) {
+            try {
+                const response = await fetch('/api/v1/mj-network/location', {
+                    method: 'PUT',
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        latitude: location.lat,
+                        longitude: location.lng,
+                        accuracy_meters: Math.round(location.accuracy),
+                        is_visible_on_map: !mapSettings.ghost_mode_enabled
+                    })
+                });
+                
+                if (response.ok) {
+                    console.log('✅ Location updated on server');
+                } else {
+                    console.error('❌ Failed to update location on server');
+                }
+            } catch (error) {
+                console.error('❌ Error updating location:', error);
+            }
+        }
+
+        function addUserMarker() {
+            if (userMarker) {
+                worldMap.removeLayer(userMarker);
+            }
+            
+            if (!userLocation) return;
+            
+            // Create blue marker for user
+            userMarker = L.marker([userLocation.lat, userLocation.lng], {
+                icon: L.divIcon({
+                    className: 'custom-div-icon',
+                    html: `<div style="
+                        background: #0088ff; 
+                        width: 20px; 
+                        height: 20px; 
+                        border-radius: 50%; 
+                        border: 3px solid white;
+                        box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+                    "></div>`,
+                    iconSize: [20, 20],
+                    iconAnchor: [10, 10]
+                })
+            });
+            
+            userMarker.bindPopup(`
+                <div class="user-popup">
+                    <h4>You are here</h4>
+                    <div>Accuracy: ±${Math.round(userLocation.accuracy)}m</div>
+                </div>
+            `);
+            
+            userMarker.addTo(worldMap);
+        }
+
+        async function updateMapViewport() {
+            if (!worldMap) return;
+            
+            const bounds = worldMap.getBounds();
+            currentMapBounds = {
+                north_lat: bounds.getNorth(),
+                south_lat: bounds.getSouth(),
+                east_lng: bounds.getEast(),
+                west_lng: bounds.getWest(),
+                zoom_level: worldMap.getZoom()
+            };
+            
+            await loadUsersInViewport();
+        }
+
+        async function loadUsersInViewport() {
+            if (!currentMapBounds) return;
+            
+            try {
+                const response = await fetch('/api/v1/mj-network/map/viewport-users', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(currentMapBounds)
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    displayUsersOnMap(data.viewport_users);
+                    updateMapStats(data);
+                } else {
+                    console.error('❌ Failed to load viewport users');
+                }
+            } catch (error) {
+                console.error('❌ Error loading viewport users:', error);
+            }
+        }
+
+        function displayUsersOnMap(users) {
+            // Clear existing user markers
+            mapUserMarkers.forEach(marker => {
+                worldMap.removeLayer(marker);
+            });
+            mapUserMarkers = [];
+            
+            users.forEach(user => {
+                const isFriend = user.is_friend;
+                const markerColor = isFriend ? '#00ff88' : '#ff6b6b'; // Green for friends, red for strangers
+                
+                const marker = L.marker([user.latitude, user.longitude], {
+                    icon: L.divIcon({
+                        className: 'custom-div-icon',
+                        html: `<div style="
+                            background: ${markerColor}; 
+                            width: 16px; 
+                            height: 16px; 
+                            border-radius: 50%; 
+                            border: 2px solid white;
+                            box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+                        "></div>`,
+                        iconSize: [16, 16],
+                        iconAnchor: [8, 8]
+                    })
+                });
+                
+                // Create popup content
+                const popupContent = `
+                    <div class="user-popup">
+                        <h4>${esc(user.username)}</h4>
+                        <div class="status ${user.mj_status}">${user.mj_status}</div>
+                        ${!isFriend ? `
+                            <button onclick="sendMapFriendRequest(${user.user_id}, '${esc(user.username)}')" 
+                                    style="
+                                        background: #00ff88; 
+                                        color: #000; 
+                                        border: none; 
+                                        padding: 5px 10px; 
+                                        border-radius: 5px; 
+                                        cursor: pointer;
+                                        margin-top: 8px;
+                                    ">
+                                Add Friend
+                            </button>
+                        ` : '<div style="color: #00ff88; font-size: 12px; margin-top: 5px;">✓ Friend</div>'}
+                    </div>
+                `;
+                
+                marker.bindPopup(popupContent);
+                marker.addTo(worldMap);
+                mapUserMarkers.push(marker);
+            });
+        }
+
+        function updateMapStats(data) {
+            document.getElementById('users-visible-count').textContent = data.count || 0;
+            document.getElementById('friends-nearby-count').textContent = 
+                data.user_settings?.showing_friends || 0;
+        }
+
+        async function sendMapFriendRequest(targetUserId, username) {
+            try {
+                const response = await fetch('/api/v1/mj-network/map/friend-request', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        target_user_id: targetUserId,
+                        request_message: `Hi ${username}! I found you on the MJ Network world map and would love to connect!`,
+                        discovered_via: 'map'
+                    })
+                });
+                
+                if (response.ok) {
+                    showAlert(`Friend request sent to ${username}!`, 'success');
+                    // Refresh the map to update the marker
+                    updateMapViewport();
+                } else {
+                    const error = await response.json();
+                    showAlert(error.detail || 'Failed to send friend request', 'error');
+                }
+            } catch (error) {
+                console.error('❌ Map friend request error:', error);
+                showAlert('Failed to send friend request', 'error');
+            }
+        }
+
+        // Map control functions
+        function centerMapOnUser() {
+            if (worldMap && userLocation) {
+                worldMap.setView([userLocation.lat, userLocation.lng], 14);
+            } else {
+                showAlert('Location not available', 'error');
+            }
+        }
+
+        function refreshMapLocation() {
+            getUserLocationForMap();
+        }
+
+        function refreshMapUsers() {
+            if (worldMap) {
+                updateMapViewport();
+                showAlert('Map refreshed', 'info');
+            }
+        }
+
+        function toggleMapPrivacy() {
+            // Quick privacy toggle - cycles through: visible -> friends only -> ghost mode
+            if (!mapSettings.ghost_mode_enabled && !mapSettings.friends_only_mode) {
+                // Currently visible to all -> friends only
+                mapSettings.friends_only_mode = true;
+                showAlert('Now visible to friends only', 'info');
+            } else if (mapSettings.friends_only_mode && !mapSettings.ghost_mode_enabled) {
+                // Currently friends only -> ghost mode
+                mapSettings.ghost_mode_enabled = true;
+                mapSettings.friends_only_mode = false;
+                showAlert('Ghost mode enabled - invisible on map', 'info');
+            } else {
+                // Currently ghost mode -> visible to all
+                mapSettings.ghost_mode_enabled = false;
+                mapSettings.friends_only_mode = false;
+                showAlert('Now discoverable by everyone', 'info');
+            }
+            
+            saveMapPrivacySettings();
+            updateMapViewport();
+        }
+
+        // Privacy settings functions
+        async function saveMapPrivacySettings() {
+            try {
+                const settings = {
+                    discovery_enabled: mapSettings.discovery_enabled,
+                    ghost_mode_enabled: mapSettings.ghost_mode_enabled,
+                    friends_only_mode: mapSettings.friends_only_mode,
+                    location_update_frequency_hours: parseInt(document.getElementById('location-frequency')?.value || 3)
+                };
+                
+                const response = await fetch('/api/v1/mj-network/map/discovery-settings', {
+                    method: 'PUT',
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(settings)
+                });
+                
+                if (response.ok) {
+                    mapSettings = settings;
+                    updatePrivacyToggles();
+                    showAlert('Map privacy settings saved!', 'success');
+                    
+                    // Update location visibility
+                    if (userLocation) {
+                        await updateServerLocation(userLocation);
+                    }
+                } else {
+                    showAlert('Failed to save privacy settings', 'error');
+                }
+            } catch (error) {
+                console.error('❌ Error saving privacy settings:', error);
+                showAlert('Failed to save privacy settings', 'error');
+            }
+        }
+
+        function updatePrivacyToggles() {
+            document.getElementById('discovery-toggle').classList.toggle('active', mapSettings.discovery_enabled);
+            document.getElementById('ghost-toggle').classList.toggle('active', mapSettings.ghost_mode_enabled);
+            document.getElementById('friends-only-toggle').classList.toggle('active', mapSettings.friends_only_mode);
+        }
+
+        function toggleDiscovery() {
+            mapSettings.discovery_enabled = !mapSettings.discovery_enabled;
+            updatePrivacyToggles();
+        }
+
+        function toggleGhostMode() {
+            mapSettings.ghost_mode_enabled = !mapSettings.ghost_mode_enabled;
+            updatePrivacyToggles();
+        }
+
+        function toggleFriendsOnly() {
+            mapSettings.friends_only_mode = !mapSettings.friends_only_mode;
+            updatePrivacyToggles();
+        }
+
+        // Real-time map update functions
+        function updateFriendLocationOnMap(data) {
+            if (!worldMap || !mapUserMarkers) return;
+            
+            console.log(`📍 Updating ${data.username}'s location on map`);
+            
+            // Find existing marker for this friend
+            let friendMarker = null;
+            for (let i = 0; i < mapUserMarkers.length; i++) {
+                if (mapUserMarkers[i].userData && mapUserMarkers[i].userData.user_id === data.user_id) {
+                    friendMarker = mapUserMarkers[i];
+                    break;
+                }
+            }
+            
+            if (friendMarker) {
+                // Update existing marker position
+                friendMarker.setLatLng([data.latitude, data.longitude]);
+                
+                // Update popup content with new timestamp
+                const popupContent = `
+                    <div class="user-popup">
+                        <h4>${esc(data.username)}</h4>
+                        <div class="status online">online</div>
+                        <div style="color: #00ff88; font-size: 12px; margin-top: 5px;">✓ Friend</div>
+                        <div style="font-size: 10px; color: #666;">Updated ${new Date().toLocaleTimeString()}</div>
+                    </div>
+                `;
+                friendMarker.getPopup().setContent(popupContent);
+                
+                console.log(`✅ Updated ${data.username}'s marker position`);
+            } else {
+                // Friend not currently visible, refresh map to show them
+                console.log(`🔄 Friend ${data.username} not visible, refreshing map`);
+                updateMapViewport();
+            }
+        }
+
+        function updateFriendMarkerStatus(userId, status) {
+            if (!worldMap || !mapUserMarkers) return;
+            
+            console.log(`🔄 Updating friend ${userId} status to ${status}`);
+            
+            mapUserMarkers.forEach(marker => {
+                if (marker.userData && marker.userData.user_id === userId) {
+                    // Update marker popup status
+                    const popup = marker.getPopup();
+                    if (popup) {
+                        const content = popup.getContent();
+                        const updatedContent = content.replace(
+                            /<div class="status \w+">\w+<\/div>/,
+                            `<div class="status ${status}">${status}</div>`
+                        );
+                        popup.setContent(updatedContent);
+                        console.log(`✅ Updated marker status for user ${userId}`);
+                    }
+                }
+            });
+        }
+
         // Message polling
         async function checkForMJMessages() {
             try {
@@ -2176,37 +3336,10 @@
                     loadPendingApprovalsCount();
                     loadActiveSessionsCount();
                 }
-            }, 5000); // Check every 30 seconds
+            }, 5000); // Check every 5 seconds
         }
 
-        // Utility functions
-        function showAlert(message, type = 'info') {
-            const alertDiv = document.createElement('div');
-            alertDiv.className = `alert alert-${type}`;
-            alertDiv.style.position = 'fixed';
-            alertDiv.style.top = '20px';
-            alertDiv.style.right = '20px';
-            alertDiv.style.zIndex = '9999';
-            alertDiv.style.minWidth = '300px';
-            alertDiv.textContent = message;
-            
-            document.body.appendChild(alertDiv);
-            
-            setTimeout(() => {
-                if (alertDiv.parentNode) {
-                    alertDiv.remove();
-                }
-            }, 5000);
-        }
-
-        function logout() {
-            localStorage.removeItem('authToken');
-            authToken = null;
-            currentUser = null;
-            showLoginScreen();
-            showAlert('Logged out successfully', 'info');
-        }
-
+        // Conversation viewing
         function viewConversation(conversationId) {
             currentConversationId = conversationId;
             isMessageDisplayOpen = true;
@@ -2253,7 +3386,6 @@
                 }
             }, 5000);
         }
-        
 
         async function loadConversationMessages(conversationId, silent = false) {
             const messagesContainer = document.getElementById('conversation-messages');
@@ -2333,10 +3465,39 @@
             const modal = document.getElementById('conversation-modal');
             if (modal) modal.remove();
         }
+
         function refreshMessages() {
             if (currentConversationId) {
                 loadConversationMessages(currentConversationId);
             }
+        }
+
+        // Utility functions
+        function showAlert(message, type = 'info') {
+            const alertDiv = document.createElement('div');
+            alertDiv.className = `alert alert-${type}`;
+            alertDiv.style.position = 'fixed';
+            alertDiv.style.top = '20px';
+            alertDiv.style.right = '20px';
+            alertDiv.style.zIndex = '9999';
+            alertDiv.style.minWidth = '300px';
+            alertDiv.innerHTML = message;
+            
+            document.body.appendChild(alertDiv);
+            
+            setTimeout(() => {
+                if (alertDiv.parentNode) {
+                    alertDiv.remove();
+                }
+            }, 5000);
+        }
+
+        function logout() {
+            localStorage.removeItem('authToken');
+            authToken = null;
+            currentUser = null;
+            showLoginScreen();
+            showAlert('Logged out successfully', 'info');
         }
 
         function esc(str) {
@@ -2363,7 +3524,7 @@
                     loadActiveSessions();
                 }
             }
-        }, 5000); // Refresh every minute
+        }, 30000); // Refresh every 30 seconds
     </script>
 </body>
 </html>
